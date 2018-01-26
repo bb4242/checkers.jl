@@ -2,7 +2,7 @@ module TTT
 
 @enum TURN p1turn=1 p2turn=2
 @enum BOARD empty=0 player1=1 player2=2
-@enum TERMINAL nonterminal=0 p1wins=1 p2wins=2
+@enum TERMINAL nonterminal=0 p1wins=1 p2wins=2 tie=3
 
 struct State
     turn::TURN
@@ -35,12 +35,6 @@ function valid_moves(s::State)
     moves
 end
 
-function is_terminal(s::State)
-    if _check_array(s.board .== player1) return p1wins end
-    if _check_array(s.board .== player2) return p2wins end
-    return nonterminal
-end
-
 function _check_array(a::BitArray{2})
     nx, ny = size(a)
     for x=1:nx
@@ -57,5 +51,43 @@ function _check_array(a::BitArray{2})
     return false
 end
 
+function is_terminal(s::State)
+    if _check_array(s.board .== player1) return p1wins end
+    if _check_array(s.board .== player2) return p2wins end
+    if !any(s.board .== empty) return tie end
+    return nonterminal
+end
+
+
+function minimax(s::State)
+    t = is_terminal(s)
+    if t == p1wins
+        return 1.0, Array{Move, 1}()
+    elseif t == p2wins
+        return -1.0, Array{Move, 1}()
+    elseif t == tie
+        return 0.0, Array{Move, 1}()
+    else
+
+        bestval::Float64 = -Inf
+        winpath = Array{Move, 1}()
+        mult = s.turn == p1turn ? 1 : -1
+        for m=valid_moves(s)
+            new_s = move(s, m)
+            val, winpath = minimax(new_s)
+            if val*mult > bestval
+                bestval = val
+                push!(winpath, m)
+            end
+        end
+
+        return bestval, winpath
+    end
+end
+
+# Test code
+s = State(p1turn, [player1 player1 empty; empty empty player2; empty player2 empty])
+println(minimax(s))
+#@code_warntype minimax(s)
 
 end
