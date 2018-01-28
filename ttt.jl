@@ -1,7 +1,7 @@
 module TTT
 
 @enum TURN p1turn=1 p2turn=2
-@enum BOARD empty=0 player1=1 player2=2
+@enum BOARD e=0 X=1 O=2
 @enum TERMINAL nonterminal=0 p1wins=1 p2wins=2 tie=3
 
 struct State
@@ -9,17 +9,19 @@ struct State
     board::Array{BOARD, 2}
 end
 
-State() = State(p1turn, fill(empty, 3, 3))
+State() = State(p1turn, fill(e, 3, 3))
 
 struct Move
     x::Int8
     y::Int8
 end
 
+Move() = Move(-1, -1)
+
 function move(s::State, m::Move)
-    @assert s.board[m.x, m.y] == empty
+    @assert s.board[m.x, m.y] == e
     new_board = deepcopy(s.board)
-    new_board[m.x, m.y] = s.turn == p1turn ? player1 : player2
+    new_board[m.x, m.y] = s.turn == p1turn ? X : O
     new_turn = s.turn == p1turn ? p2turn : p1turn
     State(new_turn, new_board)
 end
@@ -28,7 +30,7 @@ function valid_moves(s::State)
     nx, ny = size(s.board)
     moves::Array{Move, 1} = []
     for x=1:nx, y=1:ny
-        if s.board[x, y] == empty
+        if s.board[x, y] == e
             push!(moves, Move(x, y))
         end
     end
@@ -52,9 +54,9 @@ function _check_array(a::BitArray{2})
 end
 
 function is_terminal(s::State)
-    if _check_array(s.board .== player1) return p1wins end
-    if _check_array(s.board .== player2) return p2wins end
-    if !any(s.board .== empty) return tie end
+    if _check_array(s.board .== X) return p1wins end
+    if _check_array(s.board .== O) return p2wins end
+    if !any(s.board .== e) return tie end
     return nonterminal
 end
 
@@ -62,32 +64,44 @@ end
 function minimax(s::State)
     t = is_terminal(s)
     if t == p1wins
-        return 1.0, Array{Move, 1}()
+        return 1.0, Move()
     elseif t == p2wins
-        return -1.0, Array{Move, 1}()
+        return -1.0, Move()
     elseif t == tie
-        return 0.0, Array{Move, 1}()
+        return 0.0, Move()
     else
 
-        bestval::Float64 = -Inf
-        winpath = Array{Move, 1}()
         mult = s.turn == p1turn ? 1 : -1
+        bestval::Float64 = -Inf * mult
+        bestmove = Move()
         for m=valid_moves(s)
             new_s = move(s, m)
-            val, winpath = minimax(new_s)
-            if val*mult > bestval
+            val, _wm = minimax(new_s)
+            if val*mult > bestval*mult
                 bestval = val
-                push!(winpath, m)
+                bestmove = m
             end
         end
-
-        return bestval, winpath
+        return bestval, bestmove
     end
 end
 
 # Test code
-s = State(p1turn, [player1 player1 empty; empty empty player2; empty player2 empty])
-println(minimax(s))
+s = State(p1turn, [e e e; O X e; e e e])
+#s = State()
+
+r = minimax(s)
+@time r = minimax(s)
+println("\nRESULT ", r)
+#display(r[2].board)
 #@code_warntype minimax(s)
+
+println("PLAYING GAME")
+while is_terminal(s) == nonterminal
+    val, m = minimax(s)
+    println("\n", val, ": ", m)
+    s = move(s, m)
+    display(s.board)
+end
 
 end
