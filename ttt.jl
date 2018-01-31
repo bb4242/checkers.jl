@@ -1,7 +1,9 @@
 module TTT
 
+export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn, q, X, O, nonterminal, p1wins, p2wins, tie
+
 @enum TURN p1turn=1 p2turn=2
-@enum BOARD e=0 X=1 O=2
+@enum BOARD q=0 X=1 O=2
 @enum TERMINAL nonterminal=0 p1wins=1 p2wins=2 tie=3
 
 struct State
@@ -9,17 +11,17 @@ struct State
     board::Array{BOARD, 2}
 end
 
-State() = State(p1turn, fill(e, 3, 3))
+State() = State(p1turn, fill(q, 3, 3))
 
-struct Move
+mutable struct Move
     x::Int8
     y::Int8
 end
 
 Move() = Move(-1, -1)
 
-function move(s::State, m::Move)
-    @assert s.board[m.x, m.y] == e
+function apply_move(s::State, m::Move)
+    @assert s.board[m.x, m.y] == q
     new_board = deepcopy(s.board)
     new_board[m.x, m.y] = s.turn == p1turn ? X : O
     new_turn = s.turn == p1turn ? p2turn : p1turn
@@ -30,12 +32,45 @@ function valid_moves(s::State)
     nx, ny = size(s.board)
     moves::Array{Move, 1} = []
     for x=1:nx, y=1:ny
-        if s.board[x, y] == e
+        if s.board[x, y] == q
             push!(moves, Move(x, y))
         end
     end
     moves
 end
+
+# Valid moves iterator
+struct ValidMoves
+    state::State
+end
+
+mutable struct _VMState
+    sx::Int8
+    xy::Int8
+    mv::Move
+end
+
+Base.start(::ValidMoves) = _VMState(1, 1, Move())
+
+function Base.next(vm::ValidMoves, vms::_VMState)
+    nx, ny = size(vm.state.board)
+    for x=vms.sx:nx, y=vms.sy:ny
+        if vm.state.board[x, y] == q
+            vms.mv.x = x
+            vms.mv.y = y
+            break
+        end
+    end
+    vms.mv
+end
+
+function Base.done(vm::ValidMoves, vms::_VMState)
+    vms.sx == nothing
+end
+
+
+##################
+
 
 function _check_array(a::BitArray{2})
     nx, ny = size(a)
@@ -49,59 +84,14 @@ function _check_array(a::BitArray{2})
 
     if all(a[[CartesianIndex(i, i) for i=1:nx]]) return true end
     if all(a[[CartesianIndex(i, nx+1-i) for i=1:nx]]) return true end
-
     return false
 end
 
 function is_terminal(s::State)
-    if _check_array(s.board .== X) return p1wins end
-    if _check_array(s.board .== O) return p2wins end
-    if !any(s.board .== e) return tie end
-    return nonterminal
-end
-
-
-function minimax(s::State)
-    t = is_terminal(s)
-    if t == p1wins
-        return 1.0, Move()
-    elseif t == p2wins
-        return -1.0, Move()
-    elseif t == tie
-        return 0.0, Move()
-    else
-
-        mult = s.turn == p1turn ? 1 : -1
-        bestval::Float64 = -Inf * mult
-        bestmove = Move()
-        for m=valid_moves(s)
-            new_s = move(s, m)
-            val, _wm = minimax(new_s)
-            if val*mult > bestval*mult
-                bestval = val
-                bestmove = m
-            end
-        end
-        return bestval, bestmove
-    end
-end
-
-# Test code
-s = State(p1turn, [e e e; O X e; e e e])
-#s = State()
-
-r = minimax(s)
-@time r = minimax(s)
-println("\nRESULT ", r)
-#display(r[2].board)
-#@code_warntype minimax(s)
-
-println("PLAYING GAME")
-while is_terminal(s) == nonterminal
-    val, m = minimax(s)
-    println("\n", val, ": ", m)
-    s = move(s, m)
-    display(s.board)
+    if _check_array(s.board .== X) return true, 1.0 end
+    if _check_array(s.board .== O) return true, -1.0 end
+    if !any(s.board .== q) return true, 0.0 end
+    return false, 0.0
 end
 
 end
