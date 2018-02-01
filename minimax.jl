@@ -101,11 +101,12 @@ end
 
 function expand(node::Node)
     # Select a move we haven't tried before
-    untried_moves = [m.move for m in node.available_moves if m.n_tries == 0]
-    selected_move = rand(untried_moves)
+    untried = [m for m in node.available_moves if m.n_tries == 0]
+    selected = rand(untried)
+    selected.n_tries += 1
 
     # Make this move and add a node child node to n
-    new_node = Node(node, selected_move)
+    new_node = Node(node, selected.move)
     push!(node.children, new_node)
 
     return new_node
@@ -150,7 +151,7 @@ function mcts(state::State, n_iterations = 1)
         reward = default_policy(working_node.board_state)
         backup_negamax(working_node, reward)
     end
-    return node
+    return node.total_reward / node.total_visits, node
 end
 
 
@@ -162,18 +163,21 @@ function test()
          q X q;
          q q X]
     s = State(p1turn, b)
-    r = mcts(s, 10000)
+    r, n = mcts(s, 10000)
 
     display(b)
-    println("MCTS Score: ", r.total_reward / r.total_visits)
+    println("MCTS Score: ", r)
     println("Minimax Score: ", Minimax.minimax(s))
-    display(best_child(r, 0.0).board_state.board)
+    display(best_child(n, 0.0).board_state.board)
+    println("DONE")
+
+    return r, n
 end
 
 end
 
 
-MCTS.test()
+r, n = MCTS.test();
 
 #r = MCTS.mcts(MCTS.s, 1000)
 
