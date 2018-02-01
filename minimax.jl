@@ -12,7 +12,7 @@ function minimax(s::State)
         return v, Move()
     else
 
-        mult = s.turn == p1turn ? 1 : -1
+        mult = s.turn == p1turn ? 1.0 : -1.0
         bestval::Float64 = -Inf * mult
         bestmove = Move()
         for m=valid_moves(s)
@@ -112,12 +112,13 @@ function expand(node::Node)
     return new_node
 end
 
-function best_child(node::Node, c::Float64 = 0.0)
-    max_val = -Inf
+function best_child(node::Node, c::Float64 = 1.0)
+    mult = node.board_state.turn == p1turn ? 1.0 : -1.0
+    max_val = -Inf * mult
     max_child = node.children[1]
     for child in node.children
-        val = child.total_reward / child.total_visits + c * sqrt(2 * log(node.total_visits) / child.total_visits)
-        if val > max_val
+        val = child.total_reward / child.total_visits + mult * c * sqrt(2 * log(node.total_visits) / child.total_visits)
+        if val*mult > max_val*mult
             max_val = val
             max_child = child
         end
@@ -138,8 +139,7 @@ function backup_negamax(node::Node, reward::Float64)
     while !isnull(nnode)
         n = get(nnode)
         n.total_visits += 1
-        adj_reward = node.board_state.turn == p1turn ? 1.0 - reward : reward
-        n.total_reward += adj_reward
+        n.total_reward += reward
         nnode = n.parent
     end
 end
