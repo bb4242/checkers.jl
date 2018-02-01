@@ -89,8 +89,8 @@ end
 
 function is_terminal(s::State)
     if _check_array(s.board .== X) return true, 1.0 end
-    if _check_array(s.board .== O) return true, -1.0 end
-    if !any(s.board .== q) return true, 0.0 end
+    if _check_array(s.board .== O) return true, 0.0 end
+    if !any(s.board .== q) return true, 0.5 end
     return false, 0.0
 end
 

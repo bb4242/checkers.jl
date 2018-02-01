@@ -58,10 +58,11 @@ end
 module MCTS
 
 using TTT
+using Minimax
 
 mutable struct MoveData
     move::Move
-    n_tries::UInt
+    n_tries::Int
 end
 
 MoveData(move::Move) = MoveData(move, 0)
@@ -72,8 +73,8 @@ mutable struct Node
     parent::Nullable{Node}
     depth::Int
 
-    total_reward::Float32
-    total_visits::UInt
+    total_reward::Float64
+    total_visits::Int
 
     children::Vector{Node}
     available_moves::Vector{MoveData}
@@ -110,11 +111,11 @@ function expand(node::Node)
     return new_node
 end
 
-function best_child(node::Node)
+function best_child(node::Node, c::Float64 = 0.0)
     max_val = -Inf
     max_child = node.children[1]
     for child in node.children
-        val = child.total_reward / child.total_visits + sqrt(2 * log(node.total_visits) / child.total_visits)
+        val = child.total_reward / child.total_visits + c * sqrt(2 * log(node.total_visits) / child.total_visits)
         if val > max_val
             max_val = val
             max_child = child
@@ -132,16 +133,17 @@ function default_policy(state::State)
 end
 
 function backup_negamax(node::Node, reward::Float64)
-    while !isnull(node)
-        node = get(node)
-        node.total_visits += 1
-        node.total_reward += reward
-        reward *= -1
-        node = node.parent
+    nnode = Nullable(node)
+    while !isnull(nnode)
+        n = get(nnode)
+        n.total_visits += 1
+        adj_reward = node.board_state.turn == p1turn ? 1.0 - reward : reward
+        n.total_reward += adj_reward
+        nnode = n.parent
     end
 end
 
-function mcts(state::State, n_iterations = 100000)
+function mcts(state::State, n_iterations = 1)
     node = Node(state)
     for i=1:n_iterations
         working_node = tree_policy(node)
@@ -151,10 +153,34 @@ function mcts(state::State, n_iterations = 100000)
     return node
 end
 
+
+function test()
+    # b = [q X O;
+    #      q q O;
+    #      q q X]
+    b = [O q O;
+         q X q;
+         q q X]
+    s = State(p1turn, b)
+    r = mcts(s, 10000)
+
+    display(b)
+    println("MCTS Score: ", r.total_reward / r.total_visits)
+    println("Minimax Score: ", Minimax.minimax(s))
+    display(best_child(r, 0.0).board_state.board)
+end
+
 end
 
 
+MCTS.test()
 
+#r = MCTS.mcts(MCTS.s, 1000)
+
+
+
+
+#MCTS.mcts(TTT.State(), 100000)
 
 
 #Minimax.test()
