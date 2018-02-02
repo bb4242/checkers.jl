@@ -72,26 +72,63 @@ end
 ##################
 
 
-function _check_array(a::BitArray{2})
-    nx, ny = size(a)
-    for x=1:nx
-        if all(a[x, :]) return true end
-    end
-
-    for y=1:ny
-        if all(a[:, y]) return true end
-    end
-
-    if all(a[[CartesianIndex(i, i) for i=1:nx]]) return true end
-    if all(a[[CartesianIndex(i, nx+1-i) for i=1:nx]]) return true end
-    return false
-end
-
 function is_terminal(s::State)
-    if _check_array(s.board .== X) return true, 1.0 end
-    if _check_array(s.board .== O) return true, 0.0 end
-    if !any(s.board .== q) return true, 0.5 end
-    return false, 0.0
+    nx, ny = size(s.board)
+
+    # Check horizontal wins
+    tie = true
+    for x=1:nx
+        p1win = true
+        p2win = true
+        for y=1:ny
+            elem = s.board[x, y]
+            if (elem != X) p1win = false end
+            if (elem != O) p2win = false end
+            if (elem == q) tie = false end
+        end
+        if p1win return true, 1.0 end
+        if p2win return true, 0.0 end
+    end
+
+    # Check vertical wins
+    for y=1:nx
+        p1win = true
+        p2win = true
+        for x=1:ny
+            elem = s.board[x, y]
+            if (elem != X) p1win = false end
+            if (elem != O) p2win = false end
+        end
+        if p1win return true, 1.0 end
+        if p2win return true, 0.0 end
+    end
+
+    # Check diagonal wins
+    p1win = true
+    p2win = true
+    for x=1:nx
+        elem = s.board[x, x]
+        if (elem != X) p1win = false end
+        if (elem != O) p2win = false end
+    end
+    if p1win return true, 1.0 end
+    if p2win return true, 0.0 end
+
+    p1win = true
+    p2win = true
+    for x=1:nx
+        elem = s.board[x, nx+1-x]
+        if (elem != X) p1win = false end
+        if (elem != O) p2win = false end
+    end
+    if p1win return true, 1.0 end
+    if p2win return true, 0.0 end
+
+    if tie
+        return true, 0.5
+    else
+        return false, 0.0
+    end
 end
 
 end

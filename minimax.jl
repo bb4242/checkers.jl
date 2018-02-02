@@ -211,7 +211,7 @@ end
 
 end
 
-Game.play_game()
+#Game.play_game()
 
 #r, n = MCTS.test();
 
