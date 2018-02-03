@@ -77,7 +77,20 @@ function apply_move(s::State, m::Move)
 end
 
 function valid_moves(s::State)
+    player_regular = (s.turn == p1turn ? white : black)
+    player_king = (s.turn == p1turn ? White : Black)
+    player_direction = (s.turn == p1turn ? -1 : 1)
+    jumps = Vector{Move}
+    nonjumps = Vector{Move}
 
+    nx, ny = size(board)
+    for x=1:nx, y=1:ny
+        if s.board[x, y] == player_regular
+
+        elseif s.board[x, y] == player_king
+
+        end
+    end
 end
 
 
