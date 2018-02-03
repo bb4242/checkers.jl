@@ -1,10 +1,9 @@
 module TTT
 
-export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn, q, X, O, nonterminal, p1wins, p2wins, tie
+export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn, q, X, O
 
 @enum TURN p1turn=1 p2turn=2
 @enum BOARD q=0 X=1 O=2
-@enum TERMINAL nonterminal=0 p1wins=1 p2wins=2 tie=3
 
 struct State
     turn::TURN
