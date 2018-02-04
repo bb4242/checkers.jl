@@ -29,7 +29,9 @@ end
 function Base.show(io::IO, board::Array{BOARD, 2})
     nx, ny = size(board)
     println()
+    println("  1 2 3 4 5 6 7 8")
     for x=1:nx
+        print(io, x)
         for y=1:ny
             elem = board[x, y]
             if (elem == white) print("|w")
@@ -45,7 +47,8 @@ function Base.show(io::IO, board::Array{BOARD, 2})
 end
 
 mutable struct Move
-    path::Vector{Tuple{Int8, Int8}}  # Path of the piece to move, including start and end board coordinates
+    path::Array{Int8, 2}             # Path of the piece to move, including start and end board coordinates
+                                     # Rows are the path index, columns are the x, y board coordinates
 end
 
 function apply_move(s::State, m::Move)
@@ -62,7 +65,7 @@ function apply_move(s::State, m::Move)
     new_board[ex, ey] = player_piece
 
     # Clear any jumped pieces
-    for i=2:length(m.path)
+    for i=2:size(m.path)[2]
         sx, sy = m.path[i-1]
         ex, ey = m.path[i]
         if abs(ex - sx) > 1
@@ -76,21 +79,110 @@ function apply_move(s::State, m::Move)
     return State(new_turn, new_board)
 end
 
+
+mutable struct SPMove
+    move::Move
+    isjump::Bool
+end
+
+SPMove(x::Int8, y::Int8, isjump::Bool) = SPMove(Move([x y]), isjump)
+
+function _get_move_directions(s::State, loc::Vector{Int8})
+    piece = s.board[loc[1], loc[2]]
+    @assert piece in (s.turn == p1turn ? [white, White] : [black, Black])
+
+    king_moves = Int8[-1 1; -1 -1; 1 1; 1 -1]
+    if piece == white
+        return Int8[-1 1; -1 -1]
+    elseif piece == White
+        return king_moves
+    elseif piece == black
+        return Int8[1 1; 1 -1]
+    elseif piece == Black
+        return king_moves
+    else
+        @assert false
+    end
+end
+
+_on_board(loc::Vector{Int8}) = loc[1] >= 1 && loc[1] <= 8 && loc[2] >= 1 && loc[2] <= 8
+
+"Compute the valid Move paths for the piece at (x,y)"
+function _moves_for_piece(s::State, x::Int8, y::Int8)
+    my_pieces = (s.turn == p1turn ? [white, White] : [black, Black])
+    enemy_pieces = (s.turn == p1turn ? [black, Black] : [white, White])
+
+    @assert s.board[x, y] in my_pieces
+
+    queue = Vector{SPMove}([SPMove(x, y, false)])
+    available_moves = Vector{Move}()
+
+    while length(queue) > 0
+        spmove = pop!(queue)
+        jump_available = false
+
+        # Get our current location
+        loc = spmove.move.path[end, :]
+        dirs = _get_move_directions(s, spmove.move.path[1, :])
+
+        # Check the possible places we can move to
+        for i=1:size(dirs)[1]
+            # TODO: Handle promotion to king
+
+            # Check for jumps first
+            tx, ty = loc + 2*dirs[i, :]
+            ix, iy = loc + dirs[i, :]
+            if _on_board(Int8[tx, ty]) && s.board[tx, ty] == empty && s.board[ix, iy] in enemy_pieces
+                # Make sure we haven't already visited this square during this move
+                already_visited = false
+                for j=1:size(spmove.move.path)[1]
+                    if Int8[tx; ty] == spmove.move.path[j, :]
+                        already_vistited = true
+                        break
+                    end
+                end
+                if !already_visited
+                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]]), true))
+                    jump_available = true
+                end
+            end
+        end
+
+        # Check for moving to empty space
+        if !jump_available
+            if spmove.isjump
+                # If we're finishing a jump sequence, we're not allowed to move any further
+                push!(available_moves, spmove.move)
+            else
+                # Otherwise, check for nonjump moves
+                for i=1:size(dirs)[1]
+                    tx, ty = loc + dirs[i, :]
+                    if _on_board([tx, ty]) && s.board[tx, ty] == empty
+                        push!(available_moves, Move([spmove.move.path; [tx ty]]))
+                    end
+                end
+            end
+        end
+
+    end
+    return available_moves
+end
+
+
 function valid_moves(s::State)
     player_regular = (s.turn == p1turn ? white : black)
     player_king = (s.turn == p1turn ? White : Black)
     player_direction = (s.turn == p1turn ? -1 : 1)
-    jumps = Vector{Move}
-    nonjumps = Vector{Move}
+#    jumps = Vector{Move}()
+#    nonjumps = Vector{Move}()
 
-    nx, ny = size(board)
-    for x=1:nx, y=1:ny
-        if s.board[x, y] == player_regular
+#     for x in eachindex(s.board)
+#         if s.board[x] == player_regular
 
-        elseif s.board[x, y] == player_king
+#         elseif s.board[x] == player_king
 
-        end
-    end
+#         end
+#     end
 end
 
 
