@@ -20,6 +20,7 @@ function play_game()
         if state.turn == computer_player
             r, n = MCTS.mcts(state, 10000)
             state = MCTS.best_child(n, 0.0).board_state
+            println("Computer minimax estimate: ", n.total_reward / n.total_visits)
         else
             moves = valid_moves(state)
             for i=1:length(moves)
@@ -35,7 +36,7 @@ function play_game()
         end
     end
     println("Game over, winner: ", is_terminal(state))
-    display(state.board)
+    println(state.board)
 end
 
 
