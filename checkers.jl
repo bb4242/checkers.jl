@@ -57,8 +57,8 @@ function apply_move(s::State, m::Move)
     new_board = deepcopy(s.board)
 
     # Update start and end points on the board
-    sx, sy = m.path[1]
-    ex, ey = m.path[end]
+    sx, sy = m.path[1, :]
+    ex, ey = m.path[end, :]
     player_piece = new_board[sx, sy]
     @assert player_piece in (s.turn == p1turn ? [white, White] : [black, Black])
     @assert s.board[ex, ey] == empty
@@ -73,9 +73,9 @@ function apply_move(s::State, m::Move)
     new_board[ex, ey] = player_piece
 
     # Clear any jumped pieces
-    for i=2:size(m.path)[2]
-        sx, sy = m.path[i-1]
-        ex, ey = m.path[i]
+    for i=2:size(m.path)[1]
+        sx, sy = m.path[i-1, :]
+        ex, ey = m.path[i, :]
         if abs(ex - sx) > 1
             tx, ty = div(sx+ex, 2), div(sy+ey, 2)
             @assert s.board[tx, ty] in (s.turn == p1turn ? [black, Black] : [white, White])
@@ -128,6 +128,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8)
 
     while length(queue) > 0
         spmove = pop!(queue)
+#        println(spmove)
         jump_available = false   # Whether there is a jump available from this node
 
         # Get our current location
@@ -144,7 +145,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8)
                 already_visited = false
                 for j=1:size(spmove.move.path)[1]
                     if Int8[tx; ty] == spmove.move.path[j, :]
-                        already_vistited = true
+                        already_visited = true
                         break
                     end
                 end
@@ -155,7 +156,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8)
                     end
 
                     # Continue searching for further jumps
-                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]]), true, spmove.directions))
+                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]], true), spmove.directions))
                     jump_available = true
                     found_jump = true
                 end
@@ -208,4 +209,34 @@ function valid_moves(s::State)
 end
 
 
+function test_game()
+    s = State()
+    moves = valid_moves(s)
+    while length(moves) > 0
+        println("==================================================")
+        for i=1:length(moves)
+            println(i, ". ", moves[i])
+        end
+        println("\n", s)
+        line = parse(Int, readline())
+        s = apply_move(s, moves[line])
+        moves = valid_moves(s)
+    end
+
 end
+
+
+b = fill(empty, 8, 8)
+b[5, 4] = white
+b[4, 5] = black
+b[2, 5] = black
+s = State(p1turn, b)
+
+#println("HI")
+#println(_moves_for_piece(s, Int8(5), Int8(4)))
+#println(s)
+
+end
+
+
+Checkers.test_game()
