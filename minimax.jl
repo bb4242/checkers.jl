@@ -1,4 +1,5 @@
 include("ttt.jl")
+include("checkers.jl")
 
 module Minimax
 
@@ -57,7 +58,7 @@ end
 
 module MCTS
 
-using TTT
+using Checkers
 using Minimax
 
 mutable struct MoveData
@@ -128,7 +129,11 @@ end
 
 function default_policy(state::State)
     while !is_terminal(state)[1]
-        move = rand(valid_moves(state))
+        vm = valid_moves(state)
+        if length(vm) == 0
+            println("0 moves for ", state)
+        end
+        move = rand(vm)
         state = apply_move(state, move)
     end
     return is_terminal(state)[2]
@@ -155,31 +160,31 @@ function mcts(state::State, n_iterations = 1)
 end
 
 
-function test()
-    # b = [q X O;
-    #      q q O;
-    #      q q X]
-    b = [O q O;
-         q X q;
-         q q X]
-    s = State(p2turn, b)
-#    s = State()
-    r, n = mcts(s, 10000)
+# function test()
+#     # b = [q X O;
+#     #      q q O;
+#     #      q q X]
+#     b = [O q O;
+#          q X q;
+#          q q X]
+#     s = State(p2turn, b)
+# #    s = State()
+#     r, n = mcts(s, 10000)
 
-    display(b)
-    println("MCTS Score: ", r)
-    println("Minimax Score: ", Minimax.minimax(s))
-    display(best_child(n, 0.0).board_state.board)
-    println("DONE")
+#     display(b)
+#     println("MCTS Score: ", r)
+#     println("Minimax Score: ", Minimax.minimax(s))
+#     display(best_child(n, 0.0).board_state.board)
+#     println("DONE")
 
-    return r, n
+#     return r, n
+# end
+
 end
 
-end
 
 
-
-r, n = MCTS.test();
+#r, n = MCTS.test();
 
 #r = MCTS.mcts(MCTS.s, 1000)
 

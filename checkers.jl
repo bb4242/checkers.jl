@@ -186,11 +186,7 @@ end
 
 function valid_moves(s::State)
     my_pieces = (s.turn == p1turn ? [white, White] : [black, Black])
-#    player_regular = (s.turn == p1turn ? white : black)
-#    player_king = (s.turn == p1turn ? White : Black)
-#    player_direction = (s.turn == p1turn ? -1 : 1)
     all_moves = Vector{Move}()
-#    nonjumps = Vector{Move}()
 
     nx, ny = size(s.board)
     found_jump = false
@@ -207,6 +203,33 @@ function valid_moves(s::State)
         return all_moves
     end
 end
+
+
+function is_terminal(s::State)
+    n1::Int8 = 0
+    n2::Int8 = 0
+    for x in eachindex(s.board)
+        if s.board[x] in [white, White] n1 += 1 end
+        if s.board[x] in [black, Black] n2 += 1 end
+    end
+    if n1 == 0
+        return true, 0.0
+    elseif n2 == 0
+        return true, 1.0
+    else
+        nmoves = length(valid_moves(s))
+        if nmoves == 0
+            if s.turn == p1turn
+                return true, 0.0
+            else
+                return true, 1.0
+            end
+        else
+            return false, 0.0
+        end
+    end
+end
+
 
 
 function test_game()
@@ -239,4 +262,4 @@ s = State(p1turn, b)
 end
 
 
-Checkers.test_game()
+#Checkers.test_game()
