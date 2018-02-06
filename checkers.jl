@@ -34,16 +34,17 @@ function Base.show(io::IO, board::Array{BOARD, 2})
         print(io, x)
         for y=1:ny
             elem = board[x, y]
-            if (elem == white) print("|w")
-            elseif (elem == black) print(io, "|b")
-            elseif (elem == White) print(io, "|W")
-            elseif (elem == Black) print(io, "|B")
+            if (elem == white) print("|⛂")
+            elseif (elem == black) print(io, "|⛀")
+            elseif (elem == White) print(io, "|⛃")
+            elseif (elem == Black) print(io, "|⛁")
             elseif (elem == empty) print(io, "|.")
             elseif (elem == xxxxx) print(io, "| ")
             end
         end
-        println(io, "|")
+        println(io, "|", x)
     end
+    println("  1 2 3 4 5 6 7 8")
 end
 
 mutable struct Move
@@ -51,6 +52,8 @@ mutable struct Move
     # Rows are the path index, columns are the x, y board coordinates
     isjump::Bool
 end
+
+Move() = Move(Array{Int8, 2}(0, 2), false)
 
 function apply_move(s::State, m::Move)
     @assert length(m.path) >= 2
