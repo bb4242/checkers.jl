@@ -3,7 +3,7 @@ include("checkers.jl")
 
 module Minimax
 
-using TTT
+using Checkers
 using Base.Test
 
 
@@ -28,29 +28,29 @@ function minimax(s::State)
     end
 end
 
-function test()
-    # Test code
-    s = State(p1turn, [q q q; O X q; q q q])
-    #s = State()
+# function test()
+#     # Test code
+#     s = State(p1turn, [q q q; O X q; q q q])
+#     #s = State()
 
-    r = minimax(s)
-    println("\nRESULT ", r)
-    #display(r[2].board)
-    #@code_warntype minimax(s)
+#     r = minimax(s)
+#     println("\nRESULT ", r)
+#     #display(r[2].board)
+#     #@code_warntype minimax(s)
 
-    println("PLAYING GAME")
-    while !is_terminal(s)[1]
-        val, m = minimax(s)
-        println("\n", val, ": ", m)
-        s = apply_move(s, m)
-        display(s.board)
-    end
+#     println("PLAYING GAME")
+#     while !is_terminal(s)[1]
+#         val, m = minimax(s)
+#         println("\n", val, ": ", m)
+#         s = apply_move(s, m)
+#         display(s.board)
+#     end
 
-    @test minimax(s)[1] == 1
-    @test minimax(State())[1] == 0
+#     @test minimax(s)[1] == 1
+#     @test minimax(State())[1] == 0
 
-    @time minimax(State())
-end
+#     @time minimax(State())
+# end
 
 
 end
