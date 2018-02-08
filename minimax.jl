@@ -177,14 +177,14 @@ function mcts(state::State, n_iterations = 1; command_channel = nothing, respons
                     node = Node(cmd[2])
 
                 elseif cmd[1] == :apply_move
-                    response = (:error, :notfound)
+                    response = (false, :notfound)
                     for c in node.children
                         if get(c.move) == cmd[2]
                             # Move to the child node and garbage collect the unused part of the tree
                             node = c
                             node.parent = nothing
                             node.move = nothing
-                            response = (:ok, node.board_state)
+                            response = (true, node.board_state)
                             break
                         end
                     end
@@ -193,7 +193,7 @@ function mcts(state::State, n_iterations = 1; command_channel = nothing, respons
                 elseif cmd[1] == :get_current_stats
                     stats = [MoveStats(get(c.move), c.total_visits, c.total_reward / c.total_visits) for c in node.children]
                     total_visits = sum([c.total_visits for c in node.children])
-                    put!(response_channel, (:ok, WorkerStats(node.board_state, total_visits, stats)))
+                    put!(response_channel, (true, WorkerStats(node.board_state, total_visits, stats)))
 
                 elseif cmd[1] == :quit
                     return
@@ -245,11 +245,13 @@ end
 function _call(wc, cmd)
     _send_all(wc, cmd)
     results = []
+    allok = true
     for resp in wc.response_channels
         ok, res = take!(resp)
-        @assert ok == :ok
+        allok = allok && ok
         push!(results, res)
     end
+    @assert allok
     return results
 end
 
