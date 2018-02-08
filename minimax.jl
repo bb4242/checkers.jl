@@ -274,7 +274,7 @@ function get_best_move(wc)
 
     sorted_votes = sort(collect(move_votes), by=tuple->last(tuple), rev=true)
     selected_move = sorted_votes[1][1]
-    if sorted_votes[1][2] == sorted_votes[2][2]
+    if length(sorted_votes) > 1 && sorted_votes[1][2] == sorted_votes[2][2]
         # Break tie by visit count
         sorted_visits = sort(collect(move_visits), by=tuple->last(tuple), rev=true)
         selected_move = sorted_visits[1][1]

@@ -1,4 +1,4 @@
-include("minimax.jl")
+@everywhere include("minimax.jl")
 
 module Game
 
@@ -6,34 +6,41 @@ using MCTS
 using Checkers
 
 
-function play_game()
+function play_game(think_time)
     state = State()
+
+    wc = MCTS.start_workers()
 
     computer_player = rand([p1turn, p2turn])
     println("Computer is ", computer_player)
 
     while !is_terminal(state)[1]
-        println("It's the turn of ", state.turn)
+        println("\nTURN: ", state.turn)
         println(state)
         println()
+        moves = valid_moves(state)
+        selected_move = nothing
 
         if state.turn == computer_player
-            r, n = MCTS.mcts(state, 10000)
-            state = MCTS.best_child(n, 0.0).board_state
-            println("Computer minimax estimate: ", n.total_reward / n.total_visits)
+            if length(moves) > 1
+                sleep(think_time)
+            end
+            selected_move, n_nodes, est_minimax = MCTS.get_best_move(wc)
+            println("Computer minimax estimate: ", est_minimax)
+            println("Computer nodes: ", n_nodes)
+            println("Computer move: ", selected_move)
+
         else
-            moves = valid_moves(state)
             for i=1:length(moves)
                 println(i, ". ", moves[i])
             end
-            line = parse(Int, readline())
-            state = apply_move(state, moves[line])
-
-            # println("\nEnter your move like (1, 3): ")
-            # input = map(x->parse(Int, x), split(readline(), ","))
-            # move = Move(input[1], input[2])
-            # state = apply_move(state, move)
+                line = parse(Int, readline())
+            selected_move = moves[line]
         end
+
+        state = apply_move(state, selected_move)
+        MCTS.do_apply_move(wc, selected_move)
+
     end
     println("Game over, winner: ", is_terminal(state))
     println(state.board)
@@ -42,4 +49,4 @@ end
 
 end
 
-Game.play_game()
+Game.play_game(parse(Float64, ARGS[1]))
