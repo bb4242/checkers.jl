@@ -157,7 +157,7 @@ function single_mcts_pass(node::Node)
     backup_negamax(working_node, reward)
 end
 
-function mcts(state::State, n_iterations = 1, command_channel = nothing, response_channel = nothing)
+function mcts(state::State, n_iterations = 1; command_channel = nothing, response_channel = nothing)
     node = Node(state)
 
     if command_channel == nothing
@@ -168,6 +168,8 @@ function mcts(state::State, n_iterations = 1, command_channel = nothing, respons
 
     else
         while true
+            single_mcts_pass(node)
+
             if isready(command_channel)
                 cmd = take!(command_channel)
 
@@ -177,7 +179,7 @@ function mcts(state::State, n_iterations = 1, command_channel = nothing, respons
                 elseif cmd[1] == :apply_move
                     response = (:error, :notfound)
                     for c in node.children
-                        if c.move == cmd[2]
+                        if get(c.move) == cmd[2]
                             # Move to the child node and garbage collect the unused part of the tree
                             node = c
                             node.parent = nothing
@@ -189,16 +191,101 @@ function mcts(state::State, n_iterations = 1, command_channel = nothing, respons
                     put!(response_channel, response)
 
                 elseif cmd[1] == :get_current_stats
-                    stats = [(c.total_visits, c.total_reward / c.total_visits, c.move) for c in node.children]
-                    put!(response_channel, (:ok, stats))
+                    stats = [MoveStats(get(c.move), c.total_visits, c.total_reward / c.total_visits) for c in node.children]
+                    total_visits = sum([c.total_visits for c in node.children])
+                    put!(response_channel, (:ok, WorkerStats(node.board_state, total_visits, stats)))
+
+                elseif cmd[1] == :quit
+                    return
                 end
             end
-
-            single_mcts_pass(node)
         end
     end
-
 end
+
+
+struct MoveStats
+    move::Move
+    total_visits::Int
+    avg_reward::Float64
+end
+
+struct WorkerStats
+    current_state::State
+    total_visits::Int
+    move_stats::Vector{MoveStats}
+end
+
+struct WorkerComm
+    command_channels::Vector{RemoteChannel}
+    response_channels::Vector{RemoteChannel}
+end
+
+function start_workers()
+    cmds = Vector{RemoteChannel}()
+    resps = Vector{RemoteChannel}()
+
+    for p in workers()
+        cmd = RemoteChannel(()->Channel(1))
+        resp = RemoteChannel(()->Channel(1))
+        remote_do(mcts, p, State(), command_channel=cmd, response_channel=resp)
+        push!(cmds, cmd)
+        push!(resps, resp)
+    end
+
+    return WorkerComm(cmds, resps)
+end
+
+function _send_all(wc::WorkerComm, cmd)
+    for cc in wc.command_channels
+        put!(cc, cmd)
+    end
+end
+
+function _call(wc, cmd)
+    _send_all(wc, cmd)
+    results = []
+    for resp in wc.response_channels
+        ok, res = take!(resp)
+        @assert ok == :ok
+        push!(results, res)
+    end
+    return results
+end
+
+start_thinking(wc::WorkerComm, s::State) = _send_all(wc, (:start_thinking, s))
+do_apply_move(wc::WorkerComm, m::Move) = _call(wc, (:apply_move, m))
+get_stats(wc::WorkerComm) = _call(wc, (:get_current_stats,))
+
+function get_best_move(wc)
+    stats = get_stats(wc)
+
+    # Pick the best move by majority voting based on most-visited nodes
+    move_votes = Dict{Move, Int}()
+    move_visits = Dict{Move, Int}()
+    for stat in stats
+        best_move_stats = sort(stat.move_stats, by=ms->ms.total_visits, rev=true)[1]
+        bm = best_move_stats.move
+        move_votes[bm] = get(move_votes, bm, 0) + 1
+        move_visits[bm] = get(move_visits, bm, 0) + best_move_stats.total_visits
+    end
+
+    sorted_votes = sort(collect(move_votes), by=tuple->last(tuple), rev=true)
+    selected_move = sorted_votes[1][1]
+    if sorted_votes[1][2] == sorted_votes[2][2]
+        # Break tie by visit count
+        sorted_visits = sort(collect(move_visits), by=tuple->last(tuple), rev=true)
+        selected_move = sorted_visits[1][1]
+    end
+
+    # Compute estimated minimax value and total visit count
+    total_visits = sum([s.total_visits for s in stats])
+    est_minimax = mean([m.avg_reward for s in stats for m in s.move_stats if m.move == selected_move])
+
+    return selected_move, total_visits, est_minimax
+end
+
+stop_workers(wc::WorkerComm) = _send_all(wc, (:quit, ))
 
 
 # function test()

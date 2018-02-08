@@ -1,5 +1,7 @@
 module Checkers
 
+using AutoHashEquals
+
 export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn
 
 @enum TURN p1turn=1 p2turn=2
@@ -48,7 +50,7 @@ function Base.show(io::IO, board::Array{BOARD, 2})
     println("  1 2 3 4 5 6 7 8")
 end
 
-mutable struct Move
+@auto_hash_equals struct Move
     path::Array{Int8, 2}             # Path of the piece to move, including start and end board coordinates
     # Rows are the path index, columns are the x, y board coordinates
     isjump::Bool
