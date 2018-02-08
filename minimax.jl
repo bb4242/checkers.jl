@@ -72,6 +72,7 @@ mutable struct Node
     board_state::State
 
     parent::Nullable{Node}
+    move::Nullable{Move}     # The move used to arrive at this state
     depth::Int
 
     total_reward::Float64
@@ -84,10 +85,10 @@ end
 function Node(node::Node, move::Move)
     new_state = apply_move(node.board_state, move)
     new_available_moves = [MoveData(m) for m in valid_moves(new_state)]
-    return Node(new_state, node, node.depth+1, 0.0, 0, Vector{Node}(), new_available_moves)
+    return Node(new_state, node, move, node.depth+1, 0.0, 0, Vector{Node}(), new_available_moves)
 end
 
-Node(state::State) = Node(state, nothing, 0, 0.0, 0, Vector{Node}(), [MoveData(m) for m in valid_moves(state)])
+Node(state::State) = Node(state, nothing, nothing, 0, 0.0, 0, Vector{Node}(), [MoveData(m) for m in valid_moves(state)])
 
 function tree_policy(node::Node)
     while !is_terminal(node.board_state)[1]
@@ -149,14 +150,54 @@ function backup_negamax(node::Node, reward::Float64)
     end
 end
 
-function mcts(state::State, n_iterations = 1)
+"Update node by running a single MCTS pass"
+function single_mcts_pass(node::Node)
+    working_node = tree_policy(node)
+    reward = default_policy(working_node.board_state)
+    backup_negamax(working_node, reward)
+end
+
+function mcts(state::State, n_iterations = 1, command_channel = nothing, response_channel = nothing)
     node = Node(state)
-    for i=1:n_iterations
-        working_node = tree_policy(node)
-        reward = default_policy(working_node.board_state)
-        backup_negamax(working_node, reward)
+
+    if command_channel == nothing
+        for i=1:n_iterations
+            single_mcts_pass(node)
+        end
+        return node.total_reward / node.total_visits, node
+
+    else
+        while true
+            if isready(command_channel)
+                cmd = take!(command_channel)
+
+                if cmd[1] == :start_thinking
+                    node = Node(cmd[2])
+
+                elseif cmd[1] == :apply_move
+                    response = (:error, :notfound)
+                    for c in node.children
+                        if c.move == cmd[2]
+                            # Move to the child node and garbage collect the unused part of the tree
+                            node = c
+                            node.parent = nothing
+                            node.move = nothing
+                            response = (:ok, node.board_state)
+                            break
+                        end
+                    end
+                    put!(response_channel, response)
+
+                elseif cmd[1] == :get_current_stats
+                    stats = [(c.total_visits, c.total_reward / c.total_visits, c.move) for c in node.children]
+                    put!(response_channel, (:ok, stats))
+                end
+            end
+
+            single_mcts_pass(node)
+        end
     end
-    return node.total_reward / node.total_visits, node
+
 end
 
 
