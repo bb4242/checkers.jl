@@ -14,7 +14,7 @@ function play_game()
 
     while !is_terminal(state)[1]
         println("It's the turn of ", state.turn)
-        println(state.board)
+        println(state)
         println()
 
         if state.turn == computer_player

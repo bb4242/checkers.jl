@@ -7,6 +7,7 @@ export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn
 
 struct State
     turn::TURN
+    moves_without_capture::Int8
     board::Array{BOARD, 2}
 end
 
@@ -23,7 +24,7 @@ function State()
             board[x, y] = empty
         end
     end
-    return State(p1turn, board)
+    return State(p1turn, 0, board)
 end
 
 function Base.show(io::IO, board::Array{BOARD, 2})
@@ -58,6 +59,7 @@ Move() = Move(Array{Int8, 2}(0, 2), false)
 function apply_move(s::State, m::Move)
     @assert length(m.path) >= 2
     new_board = deepcopy(s.board)
+    new_moves_without_capture = s.moves_without_capture + 1
 
     # Update start and end points on the board
     sx, sy = m.path[1, :]
@@ -83,11 +85,12 @@ function apply_move(s::State, m::Move)
             tx, ty = div(sx+ex, 2), div(sy+ey, 2)
             @assert s.board[tx, ty] in (s.turn == p1turn ? [black, Black] : [white, White])
             new_board[tx, ty] = empty
+            new_moves_without_capture = 0
         end
     end
 
     new_turn = s.turn == p1turn ? p2turn : p1turn
-    return State(new_turn, new_board)
+    return State(new_turn, new_moves_without_capture, new_board)
 end
 
 
@@ -209,8 +212,8 @@ end
 
 
 function is_terminal(s::State)
-    n1::Int8 = 0
-    n2::Int8 = 0
+    n1 = Int8(0)
+    n2 = Int8(0)
     for x in eachindex(s.board)
         if s.board[x] in [white, White] n1 += 1 end
         if s.board[x] in [black, Black] n2 += 1 end
@@ -227,6 +230,8 @@ function is_terminal(s::State)
             else
                 return true, 1.0
             end
+        elseif s.moves_without_capture > 100
+            return true, 0.5
         else
             return false, 0.0
         end
@@ -256,7 +261,7 @@ b = fill(empty, 8, 8)
 b[5, 4] = white
 b[4, 5] = black
 b[2, 5] = black
-s = State(p1turn, b)
+s = State(p1turn, 0, b)
 
 #println("HI")
 #println(_moves_for_piece(s, Int8(5), Int8(4)))
