@@ -157,47 +157,59 @@ function single_mcts_pass(node::Node)
     backup_negamax(working_node, reward)
 end
 
-function mcts(state::State, n_iterations = 1; command_channel = nothing, response_channel = nothing)
+function mcts(state::State, n_iterations::Int = 1)
     node = Node(state)
+    for i=1:n_iterations
+        single_mcts_pass(node)
+    end
+    return node.total_reward / node.total_visits, node
+end
 
-    if command_channel == nothing
-        for i=1:n_iterations
+function mcts(state::State, command_channel::RemoteChannel, response_channel::RemoteChannel)
+    node = Node(state)
+    paused = false
+
+    while true
+        if !paused
             single_mcts_pass(node)
+        else
+            wait(command_channel)
         end
-        return node.total_reward / node.total_visits, node
 
-    else
-        while true
-            single_mcts_pass(node)
+        if isready(command_channel)
+            cmd = take!(command_channel)
 
-            if isready(command_channel)
-                cmd = take!(command_channel)
+            if cmd[1] == :start_thinking
+                node = Node(cmd[2])
 
-                if cmd[1] == :start_thinking
-                    node = Node(cmd[2])
-
-                elseif cmd[1] == :apply_move
-                    response = (false, :notfound)
-                    for c in node.children
-                        if get(c.move) == cmd[2]
-                            # Move to the child node and garbage collect the unused part of the tree
-                            node = c
-                            node.parent = nothing
-                            node.move = nothing
-                            response = (true, node.board_state)
-                            break
-                        end
+            elseif cmd[1] == :apply_move
+                response = (false, :notfound)
+                for c in node.children
+                    if get(c.move) == cmd[2]
+                        # Move to the child node and garbage collect the unused part of the tree
+                        node = c
+                        node.parent = nothing
+                        node.move = nothing
+                        response = (true, node.board_state)
+                        gc(true)
+                        break
                     end
-                    put!(response_channel, response)
-
-                elseif cmd[1] == :get_current_stats
-                    stats = [MoveStats(get(c.move), c.total_visits, c.total_reward / c.total_visits) for c in node.children]
-                    total_visits = sum([c.total_visits for c in node.children])
-                    put!(response_channel, (true, WorkerStats(node.board_state, total_visits, stats)))
-
-                elseif cmd[1] == :quit
-                    return
                 end
+                put!(response_channel, response)
+
+            elseif cmd[1] == :get_current_stats
+                stats = [MoveStats(get(c.move), c.total_visits, c.total_reward / c.total_visits) for c in node.children]
+                total_visits = sum([c.total_visits for c in node.children])
+                put!(response_channel, (true, WorkerStats(node.board_state, total_visits, stats)))
+
+            elseif cmd[1] == :pause
+                paused = true
+
+            elseif cmd[1] == :unpause
+                paused = false
+
+            elseif cmd[1] == :quit
+                return
             end
         end
     end
@@ -228,7 +240,7 @@ function start_workers()
     for p in workers()
         cmd = RemoteChannel(()->Channel(1))
         resp = RemoteChannel(()->Channel(1))
-        remote_do(mcts, p, State(), command_channel=cmd, response_channel=resp)
+        remote_do(mcts, p, State(), cmd, resp)
         push!(cmds, cmd)
         push!(resps, resp)
     end
@@ -256,7 +268,10 @@ function _call(wc, cmd)
 end
 
 start_thinking(wc::WorkerComm, s::State) = _send_all(wc, (:start_thinking, s))
-do_apply_move(wc::WorkerComm, m::Move) = _call(wc, (:apply_move, m))
+function do_apply_move(wc::WorkerComm, m::Move)
+    _call(wc, (:apply_move, m))
+    @everywhere gc(true)
+end
 get_stats(wc::WorkerComm) = _call(wc, (:get_current_stats,))
 
 function get_best_move(wc)
@@ -287,6 +302,8 @@ function get_best_move(wc)
     return selected_move, total_visits, est_minimax
 end
 
+pause_workers(wc::WorkerComm) = _send_all(wc, (:pause, ))
+unpause_workers(wc::WorkerComm) = _send_all(wc, (:unpause, ))
 stop_workers(wc::WorkerComm) = _send_all(wc, (:quit, ))
 
 
