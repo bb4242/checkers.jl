@@ -1,4 +1,4 @@
-@everywhere include("minimax.jl")
+@everywhere include("mcts.jl")
 
 module Game
 
