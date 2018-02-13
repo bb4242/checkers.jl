@@ -217,8 +217,8 @@ function is_terminal(s::State)
     n1 = Int8(0)
     n2 = Int8(0)
     for x in eachindex(s.board)
-        if s.board[x] in [white, White] n1 += 1 end
-        if s.board[x] in [black, Black] n2 += 1 end
+        if (s.board[x] == white || s.board[x] == White) n1 += 1 end
+        if (s.board[x] == black || s.board[x] == Black) n2 += 1 end
     end
     if n1 == 0
         return true, 0.0
