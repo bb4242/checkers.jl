@@ -103,17 +103,20 @@ end
 
 SPMove(x::Int8, y::Int8, isjump::Bool, directions::Array{Int8, 2}) = SPMove(Move([x y], isjump), directions)
 
+const king_moves = Int8[-1 1; -1 -1; 1 1; 1 -1]
+const white_moves = Int8[-1 1; -1 -1]
+const black_moves = Int8[1 1; 1 -1]
+
 function _get_move_directions(s::State, loc::Vector{Int8})
     piece = s.board[loc[1], loc[2]]
     @assert piece in (s.turn == p1turn ? [white, White] : [black, Black])
 
-    king_moves = Int8[-1 1; -1 -1; 1 1; 1 -1]
     if piece == white
-        return Int8[-1 1; -1 -1]
+        return white_moves
     elseif piece == White
         return king_moves
     elseif piece == black
-        return Int8[1 1; 1 -1]
+        return black_moves
     elseif piece == Black
         return king_moves
     else
