@@ -127,7 +127,7 @@ end
 _on_board(loc::Vector{Int8}) = loc[1] >= 1 && loc[1] <= 8 && loc[2] >= 1 && loc[2] <= 8
 
 "Compute the valid Move paths for the piece at (x,y)"
-function _moves_for_piece(s::State, x::Int8, y::Int8)
+function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = false)
     my_pieces = (s.turn == p1turn ? [white, White] : [black, Black])
     enemy_pieces = (s.turn == p1turn ? [black, Black] : [white, White])
 
@@ -139,7 +139,6 @@ function _moves_for_piece(s::State, x::Int8, y::Int8)
 
     while length(queue) > 0
         spmove = pop!(queue)
-#        println(spmove)
         jump_available = false   # Whether there is a jump available from this node
 
         # Get our current location
@@ -179,12 +178,18 @@ function _moves_for_piece(s::State, x::Int8, y::Int8)
             if spmove.move.isjump
                 # If we're finishing a jump sequence, we're not allowed to move any further
                 push!(available_moves, spmove.move)
+                if short_circuit
+                    return available_moves, found_jump
+                end
             else
                 # Otherwise, check for nonjump moves
                 for i=1:size(spmove.directions)[1]
                     tx, ty = loc + spmove.directions[i, :]
                     if _on_board([tx, ty]) && s.board[tx, ty] == empty
-                        push!(available_moves, Move([spmove.move.path; [tx ty]], false))
+                        push!(available_moves, Move([spmove.move.path; [tx ty]], false))    # TODO: Optimize
+                        if short_circuit
+                           return available_moves, found_jump
+                        end
                     end
                 end
             end
@@ -195,7 +200,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8)
 end
 
 
-function valid_moves(s::State)
+function valid_moves(s::State, short_circuit::Bool = false)
     my_pieces = (s.turn == p1turn ? [white, White] : [black, Black])
     all_moves = Vector{Move}()
 
@@ -203,9 +208,14 @@ function valid_moves(s::State)
     found_jump = false
     for x::Int8=1:nx, y::Int8=1:ny
         if s.board[x, y] in my_pieces
-            moves, _found_jump = _moves_for_piece(s, x, y)
+            moves, _found_jump = _moves_for_piece(s, x, y, short_circuit)
             found_jump |= _found_jump
-            append!(all_moves, moves)
+            if length(moves) > 0
+                append!(all_moves, moves)
+                if short_circuit
+                    return all_moves
+                end
+            end
         end
     end
     if found_jump
@@ -228,8 +238,7 @@ function is_terminal(s::State)
     elseif n2 == 0
         return true, 1.0
     else
-        nmoves = length(valid_moves(s))
-        if nmoves == 0
+        if length(valid_moves(s, true)) == 0
             if s.turn == p1turn
                 return true, 0.0
             else
