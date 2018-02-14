@@ -60,14 +60,14 @@ Move() = Move(Array{Int8, 2}(0, 2), false)
 
 function apply_move(s::State, m::Move)
     @assert length(m.path) >= 2
-    new_board = deepcopy(s.board)
+    new_board = deepcopy(s.board)         # TODO: no copies here, 87M
     new_moves_without_capture = s.moves_without_capture + 1
 
     # Update start and end points on the board
     sx, sy = m.path[1, :]
     ex, ey = m.path[end, :]
     player_piece = new_board[sx, sy]
-    @assert player_piece in (s.turn == p1turn ? [white, White] : [black, Black])
+    @assert player_piece in (s.turn == p1turn ? white_pieces : black_pieces)
     @assert s.board[ex, ey] == empty
     new_board[sx, sy] = empty
 
@@ -92,7 +92,7 @@ function apply_move(s::State, m::Move)
     end
 
     new_turn = s.turn == p1turn ? p2turn : p1turn
-    return State(new_turn, new_moves_without_capture, new_board)
+    return State(new_turn, new_moves_without_capture, new_board)     # TODO: no new creation here, 6M
 end
 
 
@@ -101,7 +101,7 @@ mutable struct SPMove
     directions::Array{Int8, 2}
 end
 
-SPMove(x::Int8, y::Int8, isjump::Bool, directions::Array{Int8, 2}) = SPMove(Move([x y], isjump), directions)
+SPMove(x::Int8, y::Int8, isjump::Bool, directions::Array{Int8, 2}) = SPMove(Move([x y], isjump), directions)  # 136M
 
 const white_pieces = [white, White]
 const black_pieces = [black, Black]
@@ -159,7 +159,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
                 # Make sure we haven't already visited this square during this move
                 already_visited = false
                 for j=1:size(spmove.move.path)[1]
-                    if Int8[tx; ty] == spmove.move.path[j, :]
+                    if tx == spmove.move.path[j, 1] && ty == spmove.move.path[j, 2]
                         already_visited = true
                         break
                     end
@@ -171,7 +171,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
                     end
 
                     # Continue searching for further jumps
-                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]], true), spmove.directions))
+                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]], true), spmove.directions))   # TODO: 32M
                     jump_available = true
                     found_jump = true
                 end
@@ -192,9 +192,9 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
                     tx::Int8 = loc[1] + spmove.directions[i, 1]
                     ty::Int8 = loc[2] + spmove.directions[i, 2]
                     if _on_board(tx, ty) && s.board[tx, ty] == empty
-                        push!(available_moves, Move([spmove.move.path; [tx ty]], false))    # TODO: Optimize
+                        push!(available_moves, Move([spmove.move.path; [tx ty]], false))    # TODO: 468M
                         if short_circuit
-                           return available_moves, found_jump
+                           return available_moves, found_jump       # TODO: no tuple return, 6M
                         end
                     end
                 end
@@ -202,13 +202,13 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
         end
     end
 
-    return available_moves, found_jump
+    return available_moves, found_jump     # TODO: 39M (maybe don't allocate a tuple?)
 end
 
 
 function valid_moves(s::State, short_circuit::Bool = false)
-    my_pieces = (s.turn == p1turn ? [white, White] : [black, Black])
-    all_moves = Vector{Move}()
+    my_pieces = (s.turn == p1turn ? white_pieces : black_pieces)
+    all_moves = Vector{Move}()     # TODO: 33M
 
     nx, ny = size(s.board)
     found_jump = false
@@ -217,7 +217,7 @@ function valid_moves(s::State, short_circuit::Bool = false)
             moves, _found_jump = _moves_for_piece(s, x, y, short_circuit)
             found_jump |= _found_jump
             if length(moves) > 0
-                append!(all_moves, moves)
+                append!(all_moves, moves)          # TODO: 38M
                 if short_circuit
                     return all_moves
                 end
@@ -225,7 +225,7 @@ function valid_moves(s::State, short_circuit::Bool = false)
         end
     end
     if found_jump
-        return filter((move)->move.isjump, all_moves)
+        return filter((move)->move.isjump, all_moves)    # TODO: don't use filter, 6M
     else
         return all_moves
     end

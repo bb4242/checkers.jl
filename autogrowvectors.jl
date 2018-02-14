@@ -44,7 +44,7 @@ end
 module Test
 
 using Base.Test
-using AGV
+using AutoGrowVectors
 
 mutable struct S
     x::Int

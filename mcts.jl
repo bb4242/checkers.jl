@@ -270,6 +270,17 @@ stop_workers(wc::WorkerComm) = _send_all(wc, (:quit, ))
 #     return r, n
 # end
 
+
+function test()
+    s = State()
+    mcts(s, 1)
+
+    srand(42)
+    Profile.clear_malloc_data()
+    @time mcts(s, 3000);
+    return nothing
+end
+
 end
 
 
