@@ -103,13 +103,16 @@ end
 
 SPMove(x::Int8, y::Int8, isjump::Bool, directions::Array{Int8, 2}) = SPMove(Move([x y], isjump), directions)
 
+const white_pieces = [white, White]
+const black_pieces = [black, Black]
+
 const king_moves = Int8[-1 1; -1 -1; 1 1; 1 -1]
 const white_moves = Int8[-1 1; -1 -1]
 const black_moves = Int8[1 1; 1 -1]
 
-function _get_move_directions(s::State, loc::Vector{Int8})
-    piece = s.board[loc[1], loc[2]]
-    @assert piece in (s.turn == p1turn ? [white, White] : [black, Black])
+function _get_move_directions(s::State, x::Int8, y::Int8)
+    piece = s.board[x, y]
+    @assert piece in (s.turn == p1turn ? white_pieces : black_pieces)
 
     if piece == white
         return white_moves
@@ -128,13 +131,13 @@ _on_board(x::Int8, y::Int8) = x >= 1 && x <= 8 && y >= 1 && y <= 8
 
 "Compute the valid Move paths for the piece at (x,y)"
 function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = false)
-    my_pieces = (s.turn == p1turn ? [white, White] : [black, Black])
-    enemy_pieces = (s.turn == p1turn ? [black, Black] : [white, White])
+    my_pieces = (s.turn == p1turn ? white_pieces : black_pieces)
+    enemy_pieces = (s.turn == p1turn ? black_pieces : white_pieces)
 
     @assert s.board[x, y] in my_pieces
 
-    queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, [x, y]))])
-    available_moves = Vector{Move}()
+    queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, x, y))])   # TODO: replace with AGV
+    available_moves = Vector{Move}()                                                 # TODO: replace with AGV
     found_jump = false   # Whether we've found a jump move anywhere yet
 
     while length(queue) > 0
