@@ -124,7 +124,7 @@ function _get_move_directions(s::State, loc::Vector{Int8})
     end
 end
 
-_on_board(loc::Vector{Int8}) = loc[1] >= 1 && loc[1] <= 8 && loc[2] >= 1 && loc[2] <= 8
+_on_board(x::Int8, y::Int8) = x >= 1 && x <= 8 && y >= 1 && y <= 8
 
 "Compute the valid Move paths for the piece at (x,y)"
 function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = false)
@@ -148,9 +148,11 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
         for i=1:size(spmove.directions)[1]
 
             # Check for jumps first
-            tx, ty = loc + 2*spmove.directions[i, :]
-            ix, iy = loc + spmove.directions[i, :]
-            if _on_board(Int8[tx, ty]) && s.board[tx, ty] == empty && s.board[ix, iy] in enemy_pieces
+            tx::Int8 = loc[1] + 2*spmove.directions[i, 1]
+            ty::Int8 = loc[2] + 2*spmove.directions[i, 2]
+            ix::Int8 = loc[1] + spmove.directions[i, 1]
+            iy::Int8 = loc[2] + spmove.directions[i, 2]
+            if _on_board(tx, ty) && s.board[tx, ty] == empty && s.board[ix, iy] in enemy_pieces
                 # Make sure we haven't already visited this square during this move
                 already_visited = false
                 for j=1:size(spmove.move.path)[1]
@@ -184,8 +186,9 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
             else
                 # Otherwise, check for nonjump moves
                 for i=1:size(spmove.directions)[1]
-                    tx, ty = loc + spmove.directions[i, :]
-                    if _on_board([tx, ty]) && s.board[tx, ty] == empty
+                    tx::Int8 = loc[1] + spmove.directions[i, 1]
+                    ty::Int8 = loc[2] + spmove.directions[i, 2]
+                    if _on_board(tx, ty) && s.board[tx, ty] == empty
                         push!(available_moves, Move([spmove.move.path; [tx ty]], false))    # TODO: Optimize
                         if short_circuit
                            return available_moves, found_jump
