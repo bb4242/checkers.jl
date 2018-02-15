@@ -7,7 +7,7 @@ using AutoGrowVectors
 
 import Base: copy!, show
 
-export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn
+export State, Move, apply_move, apply_move!, valid_moves, is_terminal, p1turn, p2turn
 
 @enum TURN p1turn=1 p2turn=2
 @enum BOARD white black White Black empty xxxxx
@@ -133,45 +133,49 @@ end
 CheckersMem() = CheckersMem(SPMove(), AutoGrowVector{SPMove}(), AutoGrowVector{Move}(), AutoGrowVector{Move}())
 
 
-function apply_move(s::State, m::Move, mem::CheckersMem)
+"Applies the move m to the state src, and puts the result into dest"
+function apply_move!(dest::State, src::State, m::Move, mem::CheckersMem)
     @assert length(m.path) >= 2
-    new_board = deepcopy(s.board)         # TODO: no copies here, 87M
-    new_moves_without_capture = s.moves_without_capture + 1
+    copy!(dest.board, src.board)
+    dest.moves_without_capture = src.moves_without_capture + 1
 
     # Update start and end points on the board
     sx, sy = m.path[1]
     ex, ey = m.path[end]
-    player_piece = new_board[sx, sy]
-    if !(player_piece in (s.turn == p1turn ? white_pieces : black_pieces))
-        println(s)
-        println(m)
-        error("BROKEN")
-    end
-    @assert s.board[ex, ey] == empty
-    new_board[sx, sy] = empty
+    player_piece = dest.board[sx, sy]
+    @assert player_piece in (src.turn == p1turn ? white_pieces : black_pieces)
+    @assert src.board[ex, ey] == empty
+    dest.board[sx, sy] = empty
 
     # King promotion
-    if s.turn == p1turn && 1 in [el[1] for el in m.path]      # TODO: don't allocate here
+    if src.turn == p1turn && 1 in [el[1] for el in m.path]      # TODO: don't allocate here
         player_piece = White
-    elseif s.turn == p2turn && 8 in [el[1] for el in m.path]   # TODO: don't allocate here
+    elseif src.turn == p2turn && 8 in [el[1] for el in m.path]   # TODO: don't allocate here
         player_piece = Black
     end
-    new_board[ex, ey] = player_piece
+    dest.board[ex, ey] = player_piece
 
     # Clear any jumped pieces
     for i=2:length(m.path)
         sx, sy = m.path[i-1]
         ex, ey = m.path[i]
         if abs(ex - sx) > 1
-            tx, ty = div(sx+ex, 2), div(sy+ey, 2)
-            @assert s.board[tx, ty] in (s.turn == p1turn ? [black, Black] : [white, White])
-            new_board[tx, ty] = empty
-            new_moves_without_capture = 0
+            tx = div(sx+ex, 2)
+            ty = div(sy+ey, 2)
+            @assert src.board[tx, ty] in (src.turn == p1turn ? black_pieces : white_pieces)
+            dest.board[tx, ty] = empty
+            dest.moves_without_capture = 0
         end
     end
 
-    new_turn = s.turn == p1turn ? p2turn : p1turn
-    return State(new_turn, new_moves_without_capture, new_board)     # TODO: no new creation here, 6M
+    dest.turn = src.turn == p1turn ? p2turn : p1turn
+end
+
+"Applies the move m to the state s, and returns a newly-allocated state"
+function apply_move(s::State, m::Move, mem::CheckersMem)
+    dest = State(p1turn, 0, similar(s.board))
+    apply_move!(dest, s, m, mem)
+    return dest
 end
 
 _on_board(x::Int8, y::Int8) = x >= 1 && x <= 8 && y >= 1 && y <= 8

@@ -73,15 +73,22 @@ function best_child(node::Node, c::Float64 = 1.0)
 end
 
 function default_policy(state::State, mem)
-    while !is_terminal(state, mem)[1]
-        vm = valid_moves(state, mem)
+    cur = deepcopy(state)
+    nxt = State()
+    tmp = State()
+
+    while !is_terminal(cur, mem)[1]
+        vm = valid_moves(cur, mem)
         if length(vm) == 0
             error("No moves for ", state)
         end
         move = rand(vm)
-        state = apply_move(state, move, mem)
+        apply_move!(nxt, cur, move, mem)
+        tmp = cur
+        cur = nxt
+        nxt = tmp
     end
-    return is_terminal(state, mem)[2]
+    return is_terminal(cur, mem)[2]
 end
 
 function backup_negamax(node::Node, reward::Float64)
@@ -113,6 +120,7 @@ function mcts(state::State, command_channel::RemoteChannel, response_channel::Re
     mem = Checkers.CheckersMem()
     node = Node(state, mem)
     paused = false
+    check_time = time()
 
     while true
         if !paused
@@ -121,8 +129,9 @@ function mcts(state::State, command_channel::RemoteChannel, response_channel::Re
             wait(command_channel)
         end
 
-        if isready(command_channel)
+        if (time() - check_time) > 0.1 && isready(command_channel)
             cmd = take!(command_channel)
+            check_time = time()
 
             if cmd[1] == :start_thinking
                 node = Node(cmd[2])
@@ -284,8 +293,13 @@ function test()
     MCTS.mcts(s, mem, 1)
 
     srand(42)
+    println(@benchmark MCTS.mcts($s, $mem, 3000))
+
+    srand(42)
     Profile.clear_malloc_data()
-    @benchmark MCTS.mcts($s, $mem, 3000);
+    @time MCTS.mcts(s, mem, 3000);
+
+    return
 end
 
 end
