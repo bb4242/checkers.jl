@@ -141,7 +141,11 @@ function apply_move(s::State, m::Move, mem::CheckersMem)
     sx, sy = m.path[1]
     ex, ey = m.path[end]
     player_piece = new_board[sx, sy]
-    @assert player_piece in (s.turn == p1turn ? white_pieces : black_pieces)
+    if !(player_piece in (s.turn == p1turn ? white_pieces : black_pieces))
+        println(s)
+        println(m)
+        error("BROKEN")
+    end
     @assert s.board[ex, ey] == empty
     new_board[sx, sy] = empty
 

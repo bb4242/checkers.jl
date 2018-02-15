@@ -8,17 +8,17 @@ using Checkers
 
 function play_game(think_time)
     state = State()
-
+    mem = Checkers.CheckersMem()
     wc = MCTS.start_workers()
 
     computer_player = rand([p1turn, p2turn])
     println("Computer is ", computer_player)
 
-    while !is_terminal(state)[1]
+    while !is_terminal(state, mem)[1]
         println("\nTURN: ", state.turn)
         println(state)
         println()
-        moves = valid_moves(state)
+        moves = valid_moves(state, mem)
         selected_move = nothing
 
         if state.turn == computer_player
@@ -38,7 +38,7 @@ function play_game(think_time)
             selected_move = moves[line]
         end
 
-        state = apply_move(state, selected_move)
+        state = apply_move(state, selected_move, mem)
         MCTS.do_apply_move(wc, selected_move)
 
     end

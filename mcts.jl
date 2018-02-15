@@ -25,18 +25,19 @@ mutable struct Node
     available_moves::Vector{MoveData}
 end
 
-function Node(node::Node, move::Move)
-    new_state = apply_move(node.board_state, move)
-    new_available_moves = [MoveData(m) for m in valid_moves(new_state)]
+function Node(node::Node, move::Move, mem)
+    new_state = apply_move(node.board_state, move, mem)
+    new_available_moves = [deepcopy(MoveData(m)) for m in valid_moves(new_state, mem)]
     return Node(new_state, node, move, node.depth+1, 0.0, 0, Vector{Node}(), new_available_moves)
 end
 
-Node(state::State) = Node(state, nothing, nothing, 0, 0.0, 0, Vector{Node}(), [MoveData(m) for m in valid_moves(state)])
+Node(state::State, mem) = Node(state, nothing, nothing, 0, 0.0, 0, Vector{Node}(),
+                               [deepcopy(MoveData(m)) for m in valid_moves(state, mem)])
 
-function tree_policy(node::Node)
-    while !is_terminal(node.board_state)[1]
+function tree_policy(node::Node, mem)
+    while !is_terminal(node.board_state, mem)[1]
         if length(node.children) < length(node.available_moves)
-            return expand(node)
+            return expand(node, mem)
         else
             node = best_child(node)
         end
@@ -44,14 +45,14 @@ function tree_policy(node::Node)
     return node
 end
 
-function expand(node::Node)
+function expand(node::Node, mem)
     # Select a move we haven't tried before
     untried = [m for m in node.available_moves if m.n_tries == 0]
     selected = rand(untried)
     selected.n_tries += 1
 
     # Make this move and add a node child node to n
-    new_node = Node(node, selected.move)
+    new_node = Node(node, selected.move, mem)
     push!(node.children, new_node)
 
     return new_node
@@ -71,16 +72,16 @@ function best_child(node::Node, c::Float64 = 1.0)
     return max_child
 end
 
-function default_policy(state::State)
-    while !is_terminal(state)[1]
-        vm = valid_moves(state)
+function default_policy(state::State, mem)
+    while !is_terminal(state, mem)[1]
+        vm = valid_moves(state, mem)
         if length(vm) == 0
-            println("0 moves for ", state)
+            error("No moves for ", state)
         end
         move = rand(vm)
-        state = apply_move(state, move)
+        state = apply_move(state, move, mem)
     end
-    return is_terminal(state)[2]
+    return is_terminal(state, mem)[2]
 end
 
 function backup_negamax(node::Node, reward::Float64)
@@ -94,27 +95,28 @@ function backup_negamax(node::Node, reward::Float64)
 end
 
 "Update node by running a single MCTS pass"
-function single_mcts_pass(node::Node)
-    working_node = tree_policy(node)
-    reward = default_policy(working_node.board_state)
+function single_mcts_pass(node::Node, mem)
+    working_node = tree_policy(node, mem)
+    reward = default_policy(working_node.board_state, mem)
     backup_negamax(working_node, reward)
 end
 
-function mcts(state::State, n_iterations::Int = 1)
-    node = Node(state)
+function mcts(state::State, mem, n_iterations::Int = 1)
+    node = Node(state, mem)
     for i=1:n_iterations
-        single_mcts_pass(node)
+        single_mcts_pass(node, mem)
     end
     return node.total_reward / node.total_visits, node
 end
 
 function mcts(state::State, command_channel::RemoteChannel, response_channel::RemoteChannel)
-    node = Node(state)
+    mem = Checkers.CheckersMem()
+    node = Node(state, mem)
     paused = false
 
     while true
         if !paused
-            single_mcts_pass(node)
+            single_mcts_pass(node, mem)
         else
             wait(command_channel)
         end
@@ -278,11 +280,12 @@ using MCTS
 
 function test()
     s = MCTS.State()
-    MCTS.mcts(s, 1)
+    mem = MCTS.Checkers.CheckersMem()
+    MCTS.mcts(s, mem, 1)
 
     srand(42)
     Profile.clear_malloc_data()
-    @benchmark MCTS.mcts($s, 3000);
+    @benchmark MCTS.mcts($s, $mem, 3000);
 end
 
 end
