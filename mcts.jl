@@ -271,18 +271,23 @@ stop_workers(wc::WorkerComm) = _send_all(wc, (:quit, ))
 # end
 
 
+module Test
+
+using BenchmarkTools, Compat
+using MCTS
+
 function test()
-    s = State()
-    mcts(s, 1)
+    s = MCTS.State()
+    MCTS.mcts(s, 1)
 
     srand(42)
     Profile.clear_malloc_data()
-    @time mcts(s, 3000);
-    return nothing
+    @benchmark MCTS.mcts($s, 3000);
 end
 
 end
 
+end
 
 
 #r, n = MCTS.test();

@@ -1,6 +1,6 @@
 module AutoGrowVectors
 
-import Base: getindex, setindex!, size
+import Base: getindex, setindex!, size, pop!, push!
 
 export AutoGrowVector, shrink!, reset!
 
@@ -30,6 +30,20 @@ size(v::AutoGrowVector) = (v._viewable_size, )
 
 function reset!(v::AutoGrowVector)
     v._viewable_size = 0
+end
+
+function pop!(v::AutoGrowVector)
+    if v._viewable_size >= 1
+        v._viewable_size -= 1
+        return v._data[v._viewable_size+1]
+    else
+        error("Vector is empty")
+    end
+end
+
+function push!(v::AutoGrowVector{T}, src::T) where {T}
+    dest = v[end+1]
+    copy!(dest, src)
 end
 
 function shrink!(v::AutoGrowVector, amount::Int = 1)
@@ -73,12 +87,18 @@ function test()
     shrink!(v, 2)
     @test length(v) == 7
 
+    s = pop!(v)
+    @test s.x == 7
+    @test s.y == 7^2
+    @test length(v) == 6
+
     @test (@allocated v[end+1]) == 0
 
     reset!(v)
     @test length(v) == 0
 
     @test_throws ErrorException shrink!(v)
+    @test_throws ErrorException pop!(v)
 
 
 end

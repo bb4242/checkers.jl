@@ -1,13 +1,24 @@
+include("autogrowvectors.jl")
+
 module Checkers
 
 using AutoHashEquals
+using AutoGrowVectors
 
 export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn
 
 @enum TURN p1turn=1 p2turn=2
 @enum BOARD white black White Black empty xxxxx
 
-struct State
+const white_pieces = [white, White]
+const black_pieces = [black, Black]
+
+const king_moves = Int8[-1 1; -1 -1; 1 1; 1 -1]
+const white_moves = Int8[-1 1; -1 -1]
+const black_moves = Int8[1 1; 1 -1]
+
+
+mutable struct State
     turn::TURN
     moves_without_capture::Int8
     board::Array{BOARD, 2}
@@ -50,13 +61,13 @@ function Base.show(io::IO, board::Array{BOARD, 2})
     println("  1 2 3 4 5 6 7 8")
 end
 
-@auto_hash_equals struct Move
-    path::Array{Int8, 2}             # Path of the piece to move, including start and end board coordinates
+@auto_hash_equals mutable struct Move
+    path::AutoGrowVector{Vector{Int8}}             # Path of the piece to move, including start and end board coordinates
     # Rows are the path index, columns are the x, y board coordinates
     isjump::Bool
 end
 
-Move() = Move(Array{Int8, 2}(0, 2), false)
+Move() = Move(AutoGrowVector{Vector{Int8}}(()->Int8[0, 0]), false)
 
 function apply_move(s::State, m::Move)
     @assert length(m.path) >= 2
@@ -101,14 +112,7 @@ mutable struct SPMove
     directions::Array{Int8, 2}
 end
 
-SPMove(x::Int8, y::Int8, isjump::Bool, directions::Array{Int8, 2}) = SPMove(Move([x y], isjump), directions)  # 136M
-
-const white_pieces = [white, White]
-const black_pieces = [black, Black]
-
-const king_moves = Int8[-1 1; -1 -1; 1 1; 1 -1]
-const white_moves = Int8[-1 1; -1 -1]
-const black_moves = Int8[1 1; 1 -1]
+SPMove() = SPMove(Move(), king_moves)
 
 function _get_move_directions(s::State, x::Int8, y::Int8)
     piece = s.board[x, y]
@@ -127,17 +131,40 @@ function _get_move_directions(s::State, x::Int8, y::Int8)
     end
 end
 
+"All memory used by checkers functions should be contained within this object"
+struct CheckersMem
+    mfp_queue::AutoGrowVector{SPMove}
+    move_list::AutoGrowVector{Move}
+end
+
+CheckersMem() = CheckersMem(AutoGrowVector{SPMove}(), AutoGrowVector{Move}())
+
 _on_board(x::Int8, y::Int8) = x >= 1 && x <= 8 && y >= 1 && y <= 8
 
 "Compute the valid Move paths for the piece at (x,y)"
-function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = false)
+function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = false; mem::CheckersMem = CheckersMem())
     my_pieces = (s.turn == p1turn ? white_pieces : black_pieces)
     enemy_pieces = (s.turn == p1turn ? black_pieces : white_pieces)
 
     @assert s.board[x, y] in my_pieces
 
-    queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, x, y))])   # TODO: replace with AGV
-    available_moves = Vector{Move}()                                                 # TODO: replace with AGV
+    # Reset queue state
+    queue = mem.mfp_queue
+    reset!(queue)
+    spmove = queue[end+1]
+    reset!(spmove.move.path)
+    p1 = spmove.move.path[end+1]
+    p1[1] = x
+    p1[2] = y
+    spmove.move.isjump = false
+    spmove.directions = _get_move_directions(s, x, y)
+
+    # Reset move list
+    available_moves = mem.move_list
+    reset!(available_moves)
+
+    #queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, x, y))])   # TODO: replace with AGV
+    #available_moves = Vector{Move}()                                                 # TODO: replace with AGV
     found_jump = false   # Whether we've found a jump move anywhere yet
 
     while length(queue) > 0
@@ -145,21 +172,21 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
         jump_available = false   # Whether there is a jump available from this node
 
         # Get our current location
-        loc = spmove.move.path[end, :]
+        locx, locy = spmove.move.path[end]
 
         # Check the possible places we can move to
         for i=1:size(spmove.directions)[1]
 
             # Check for jumps first
-            tx::Int8 = loc[1] + 2*spmove.directions[i, 1]
-            ty::Int8 = loc[2] + 2*spmove.directions[i, 2]
-            ix::Int8 = loc[1] + spmove.directions[i, 1]
-            iy::Int8 = loc[2] + spmove.directions[i, 2]
+            tx::Int8 = locx + 2*spmove.directions[i, 1]
+            ty::Int8 = locy + 2*spmove.directions[i, 2]
+            ix::Int8 = locx + spmove.directions[i, 1]
+            iy::Int8 = locy + spmove.directions[i, 2]
             if _on_board(tx, ty) && s.board[tx, ty] == empty && s.board[ix, iy] in enemy_pieces
                 # Make sure we haven't already visited this square during this move
                 already_visited = false
-                for j=1:size(spmove.move.path)[1]
-                    if tx == spmove.move.path[j, 1] && ty == spmove.move.path[j, 2]
+                for j=1:length(spmove.move.path)
+                    if tx == spmove.move.path[j][1] && ty == spmove.move.path[j][2]
                         already_visited = true
                         break
                     end
@@ -167,11 +194,23 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
                 if !already_visited
                     # Handle promotion to king
                     if (s.turn == p1turn && tx == 1) || (s.turn == p2turn && tx == 8)
-                        spmove.directions = Int8[-1 1; -1 -1; 1 1; 1 -1]
+                        spmove.directions = king_moves
                     end
 
                     # Continue searching for further jumps
-                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]], true), spmove.directions))   # TODO: 32M
+                    newsp = queue[end+1]
+                    newsp.directions = spmove.directions
+                    newsp.move.isjump = true
+                    reset!(newsp.move.path)
+                    for k in 1:length(spmove.move.path)
+                        newsp.move.path[k][1] = spmove.move.path[k][1]
+                        newsp.move.path[k][2] = spmove.move.path[k][2]
+                    end
+                    ep = newsp.move.path[end+1]
+                    ep[1] = tx
+                    ep[2] = ty
+
+#                    push!(queue, SPMove(Move([spmove.move.path; Int8[tx ty]], true), spmove.directions))   # TODO: 32M
                     jump_available = true
                     found_jump = true
                 end
@@ -182,15 +221,15 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
         if !jump_available
             if spmove.move.isjump
                 # If we're finishing a jump sequence, we're not allowed to move any further
-                push!(available_moves, spmove.move)
+                push!(available_moves, spmove.move)         # TODO: Fix for
                 if short_circuit
                     return available_moves, found_jump
                 end
             else
                 # Otherwise, check for nonjump moves
                 for i=1:size(spmove.directions)[1]
-                    tx::Int8 = loc[1] + spmove.directions[i, 1]
-                    ty::Int8 = loc[2] + spmove.directions[i, 2]
+                    tx::Int8 = locx + spmove.directions[i, 1]
+                    ty::Int8 = locy + spmove.directions[i, 2]
                     if _on_board(tx, ty) && s.board[tx, ty] == empty
                         push!(available_moves, Move([spmove.move.path; [tx ty]], false))    # TODO: 468M
                         if short_circuit
