@@ -5,6 +5,8 @@ module Checkers
 using AutoHashEquals
 using AutoGrowVectors
 
+import Base: copy!, show
+
 export State, Move, apply_move, valid_moves, is_terminal, p1turn, p2turn
 
 @enum TURN p1turn=1 p2turn=2
@@ -40,7 +42,7 @@ function State()
     return State(p1turn, 0, board)
 end
 
-function Base.show(io::IO, board::Array{BOARD, 2})
+function show(io::IO, board::Array{BOARD, 2})
     nx, ny = size(board)
     println()
     println("  1 2 3 4 5 6 7 8")
@@ -69,43 +71,26 @@ end
 
 Move() = Move(AutoGrowVector{Vector{Int8}}(()->Int8[0, 0]), false)
 
-function apply_move(s::State, m::Move)
-    @assert length(m.path) >= 2
-    new_board = deepcopy(s.board)         # TODO: no copies here, 87M
-    new_moves_without_capture = s.moves_without_capture + 1
-
-    # Update start and end points on the board
-    sx, sy = m.path[1, :]
-    ex, ey = m.path[end, :]
-    player_piece = new_board[sx, sy]
-    @assert player_piece in (s.turn == p1turn ? white_pieces : black_pieces)
-    @assert s.board[ex, ey] == empty
-    new_board[sx, sy] = empty
-
-    # King promotion
-    if s.turn == p1turn && 1 in m.path[:, 1]
-        player_piece = White
-    elseif s.turn == p2turn && 8 in m.path[:, 1]
-        player_piece = Black
+function copy!(dest::Move, src::Move)
+    dest.isjump = src.isjump
+    reset!(dest.path)
+    for i in 1:length(src.path)
+        dpi = dest.path[i]
+        dpi[1] = src.path[i][1]
+        dpi[2] = src.path[i][2]
     end
-    new_board[ex, ey] = player_piece
-
-    # Clear any jumped pieces
-    for i=2:size(m.path)[1]
-        sx, sy = m.path[i-1, :]
-        ex, ey = m.path[i, :]
-        if abs(ex - sx) > 1
-            tx, ty = div(sx+ex, 2), div(sy+ey, 2)
-            @assert s.board[tx, ty] in (s.turn == p1turn ? [black, Black] : [white, White])
-            new_board[tx, ty] = empty
-            new_moves_without_capture = 0
-        end
-    end
-
-    new_turn = s.turn == p1turn ? p2turn : p1turn
-    return State(new_turn, new_moves_without_capture, new_board)     # TODO: no new creation here, 6M
+    return dest
 end
 
+function show(io::IO, move::Move)
+    for i in 1:length(move.path)
+        px, py = move.path[i]
+        print(io, "($px, $py)")
+        if i < length(move.path)
+            print(io, " ➔ ")
+        end
+    end
+end
 
 mutable struct SPMove
     move::Move
@@ -113,6 +98,12 @@ mutable struct SPMove
 end
 
 SPMove() = SPMove(Move(), king_moves)
+
+function copy!(dest::SPMove, src::SPMove)
+    dest.directions = src.directions
+    copy!(dest.move, src.move)
+    return dest
+end
 
 function _get_move_directions(s::State, x::Int8, y::Int8)
     piece = s.board[x, y]
@@ -138,6 +129,44 @@ struct CheckersMem
 end
 
 CheckersMem() = CheckersMem(AutoGrowVector{SPMove}(), AutoGrowVector{Move}())
+
+
+function apply_move(s::State, m::Move; mem::CheckersMem = CheckersMem())
+    @assert length(m.path) >= 2
+    new_board = deepcopy(s.board)         # TODO: no copies here, 87M
+    new_moves_without_capture = s.moves_without_capture + 1
+
+    # Update start and end points on the board
+    sx, sy = m.path[1]
+    ex, ey = m.path[end]
+    player_piece = new_board[sx, sy]
+    @assert player_piece in (s.turn == p1turn ? white_pieces : black_pieces)
+    @assert s.board[ex, ey] == empty
+    new_board[sx, sy] = empty
+
+    # King promotion
+    if s.turn == p1turn && 1 in [el[1] for el in m.path]      # TODO: don't allocate here
+        player_piece = White
+    elseif s.turn == p2turn && 8 in [el[1] for el in m.path]   # TODO: don't allocate here
+        player_piece = Black
+    end
+    new_board[ex, ey] = player_piece
+
+    # Clear any jumped pieces
+    for i=2:length(m.path)
+        sx, sy = m.path[i-1]
+        ex, ey = m.path[i]
+        if abs(ex - sx) > 1
+            tx, ty = div(sx+ex, 2), div(sy+ey, 2)
+            @assert s.board[tx, ty] in (s.turn == p1turn ? [black, Black] : [white, White])
+            new_board[tx, ty] = empty
+            new_moves_without_capture = 0
+        end
+    end
+
+    new_turn = s.turn == p1turn ? p2turn : p1turn
+    return State(new_turn, new_moves_without_capture, new_board)     # TODO: no new creation here, 6M
+end
 
 _on_board(x::Int8, y::Int8) = x >= 1 && x <= 8 && y >= 1 && y <= 8
 
@@ -166,9 +195,11 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
     #queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, x, y))])   # TODO: replace with AGV
     #available_moves = Vector{Move}()                                                 # TODO: replace with AGV
     found_jump = false   # Whether we've found a jump move anywhere yet
+    spmove = SPMove()
 
     while length(queue) > 0
-        spmove = pop!(queue)
+
+        pop!(queue, spmove)
         jump_available = false   # Whether there is a jump available from this node
 
         # Get our current location
@@ -198,14 +229,8 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
                     end
 
                     # Continue searching for further jumps
-                    newsp = queue[end+1]
-                    newsp.directions = spmove.directions
+                    newsp = push!(queue, spmove)
                     newsp.move.isjump = true
-                    reset!(newsp.move.path)
-                    for k in 1:length(spmove.move.path)
-                        newsp.move.path[k][1] = spmove.move.path[k][1]
-                        newsp.move.path[k][2] = spmove.move.path[k][2]
-                    end
                     ep = newsp.move.path[end+1]
                     ep[1] = tx
                     ep[2] = ty
@@ -222,6 +247,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
             if spmove.move.isjump
                 # If we're finishing a jump sequence, we're not allowed to move any further
                 push!(available_moves, spmove.move)         # TODO: Fix for
+
                 if short_circuit
                     return available_moves, found_jump
                 end
@@ -231,7 +257,13 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
                     tx::Int8 = locx + spmove.directions[i, 1]
                     ty::Int8 = locy + spmove.directions[i, 2]
                     if _on_board(tx, ty) && s.board[tx, ty] == empty
-                        push!(available_moves, Move([spmove.move.path; [tx ty]], false))    # TODO: 468M
+                        newmove = push!(available_moves, spmove.move)
+                        newmove.isjump = false
+                        ep = newmove.path[end+1]
+                        ep[1] = tx
+                        ep[2] = ty
+
+#                        Move([spmove.move.path; [tx ty]], false))    # TODO: 468M
                         if short_circuit
                            return available_moves, found_jump       # TODO: no tuple return, 6M
                         end
@@ -245,7 +277,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
 end
 
 
-function valid_moves(s::State, short_circuit::Bool = false)
+function valid_moves(s::State, short_circuit::Bool = false; mem::CheckersMem = CheckersMem())
     my_pieces = (s.turn == p1turn ? white_pieces : black_pieces)
     all_moves = Vector{Move}()     # TODO: 33M
 
@@ -253,10 +285,10 @@ function valid_moves(s::State, short_circuit::Bool = false)
     found_jump = false
     for x::Int8=1:nx, y::Int8=1:ny
         if s.board[x, y] in my_pieces
-            moves, _found_jump = _moves_for_piece(s, x, y, short_circuit)
+            moves, _found_jump = _moves_for_piece(s, x, y, short_circuit; mem=mem)
             found_jump |= _found_jump
             if length(moves) > 0
-                append!(all_moves, moves)          # TODO: 38M
+                append!(all_moves, moves)          # TODO: 38M  APPEND! does not work with AutoGrowVectors yet
                 if short_circuit
                     return all_moves
                 end
@@ -271,7 +303,7 @@ function valid_moves(s::State, short_circuit::Bool = false)
 end
 
 
-function is_terminal(s::State)
+function is_terminal(s::State; mem::CheckersMem = CheckersMem())
     n1 = Int8(0)
     n2 = Int8(0)
     for x in eachindex(s.board)
@@ -299,6 +331,25 @@ end
 
 
 
+
+module Test
+
+using Base.Test
+using Checkers
+
+function test()
+    s = State()
+    moves, isjump = Checkers._moves_for_piece(s, Int8(6), Int8(3))
+    @test length(moves) == 2
+
+    s.board[5, 4] = Checkers.black
+    moves, isjump = Checkers._moves_for_piece(s, Int8(6), Int8(3))
+    @test length(moves) == 1
+
+
+end
+
+
 function test_game()
     s = State()
     moves = valid_moves(s)
@@ -316,10 +367,10 @@ function test_game()
 end
 
 
-b = fill(empty, 8, 8)
-b[5, 4] = white
-b[4, 5] = black
-b[2, 5] = black
+b = fill(Checkers.empty, 8, 8)
+b[5, 4] = Checkers.white
+b[4, 5] = Checkers.black
+b[2, 5] = Checkers.black
 s = State(p1turn, 0, b)
 
 #println("HI")
@@ -328,5 +379,7 @@ s = State(p1turn, 0, b)
 
 end
 
+
+end
 
 #Checkers.test_game()

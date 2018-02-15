@@ -32,10 +32,11 @@ function reset!(v::AutoGrowVector)
     v._viewable_size = 0
 end
 
-function pop!(v::AutoGrowVector)
+"Pop the last element from the vector and copy it into dest"
+function pop!(v::AutoGrowVector{T}, dest::T) where {T}
     if v._viewable_size >= 1
         v._viewable_size -= 1
-        return v._data[v._viewable_size+1]
+        copy!(dest, v._data[v._viewable_size+1])
     else
         error("Vector is empty")
     end
@@ -44,6 +45,7 @@ end
 function push!(v::AutoGrowVector{T}, src::T) where {T}
     dest = v[end+1]
     copy!(dest, src)
+    return dest
 end
 
 function shrink!(v::AutoGrowVector, amount::Int = 1)
