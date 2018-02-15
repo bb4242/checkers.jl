@@ -125,13 +125,14 @@ end
 "All memory used by checkers functions should be contained within this object"
 struct CheckersMem
     mfp_queue::AutoGrowVector{SPMove}
-    move_list::AutoGrowVector{Move}
+    jump_moves::AutoGrowVector{Move}
+    nonjump_moves::AutoGrowVector{Move}
 end
 
-CheckersMem() = CheckersMem(AutoGrowVector{SPMove}(), AutoGrowVector{Move}())
+CheckersMem() = CheckersMem(AutoGrowVector{SPMove}(), AutoGrowVector{Move}(), AutoGrowVector{Move}())
 
 
-function apply_move(s::State, m::Move; mem::CheckersMem = CheckersMem())
+function apply_move(s::State, m::Move, mem::CheckersMem)
     @assert length(m.path) >= 2
     new_board = deepcopy(s.board)         # TODO: no copies here, 87M
     new_moves_without_capture = s.moves_without_capture + 1
@@ -171,7 +172,7 @@ end
 _on_board(x::Int8, y::Int8) = x >= 1 && x <= 8 && y >= 1 && y <= 8
 
 "Compute the valid Move paths for the piece at (x,y)"
-function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = false; mem::CheckersMem = CheckersMem())
+function _moves_for_piece(s::State, x::Int8, y::Int8, mem::CheckersMem, short_circuit::Bool = false)
     my_pieces = (s.turn == p1turn ? white_pieces : black_pieces)
     enemy_pieces = (s.turn == p1turn ? black_pieces : white_pieces)
 
@@ -187,10 +188,6 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
     p1[2] = y
     spmove.move.isjump = false
     spmove.directions = _get_move_directions(s, x, y)
-
-    # Reset move list
-    available_moves = mem.move_list
-    reset!(available_moves)
 
     #queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, x, y))])   # TODO: replace with AGV
     #available_moves = Vector{Move}()                                                 # TODO: replace with AGV
@@ -246,64 +243,56 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, short_circuit::Bool = fals
         if !jump_available
             if spmove.move.isjump
                 # If we're finishing a jump sequence, we're not allowed to move any further
-                push!(available_moves, spmove.move)         # TODO: Fix for
-
-                if short_circuit
-                    return available_moves, found_jump
-                end
+                push!(mem.jump_moves, spmove.move)         # TODO: Fix for
+                short_circuit && return
             else
                 # Otherwise, check for nonjump moves
                 for i=1:size(spmove.directions)[1]
                     tx::Int8 = locx + spmove.directions[i, 1]
                     ty::Int8 = locy + spmove.directions[i, 2]
                     if _on_board(tx, ty) && s.board[tx, ty] == empty
-                        newmove = push!(available_moves, spmove.move)
+                        newmove = push!(mem.nonjump_moves, spmove.move)
                         newmove.isjump = false
                         ep = newmove.path[end+1]
                         ep[1] = tx
                         ep[2] = ty
 
 #                        Move([spmove.move.path; [tx ty]], false))    # TODO: 468M
-                        if short_circuit
-                           return available_moves, found_jump       # TODO: no tuple return, 6M
-                        end
+                        short_circuit && return
                     end
                 end
             end
         end
     end
 
-    return available_moves, found_jump     # TODO: 39M (maybe don't allocate a tuple?)
+    return
 end
 
 
-function valid_moves(s::State, short_circuit::Bool = false; mem::CheckersMem = CheckersMem())
+function valid_moves(s::State, mem::CheckersMem, short_circuit::Bool = false)
     my_pieces = (s.turn == p1turn ? white_pieces : black_pieces)
-    all_moves = Vector{Move}()     # TODO: 33M
+
+    reset!(mem.jump_moves)
+    reset!(mem.nonjump_moves)
 
     nx, ny = size(s.board)
     found_jump = false
     for x::Int8=1:nx, y::Int8=1:ny
         if s.board[x, y] in my_pieces
-            moves, _found_jump = _moves_for_piece(s, x, y, short_circuit; mem=mem)
-            found_jump |= _found_jump
-            if length(moves) > 0
-                append!(all_moves, moves)          # TODO: 38M  APPEND! does not work with AutoGrowVectors yet
-                if short_circuit
-                    return all_moves
-                end
-            end
+            _moves_for_piece(s, x, y, mem, short_circuit)
+            (length(mem.jump_moves) > 0 || length(mem.nonjump_moves) > 0) && short_circuit && break
         end
     end
-    if found_jump
-        return filter((move)->move.isjump, all_moves)    # TODO: don't use filter, 6M
+
+    if length(mem.jump_moves) > 0
+        return mem.jump_moves
     else
-        return all_moves
+        return mem.nonjump_moves
     end
 end
 
 
-function is_terminal(s::State; mem::CheckersMem = CheckersMem())
+function is_terminal(s::State, mem::CheckersMem)
     n1 = Int8(0)
     n2 = Int8(0)
     for x in eachindex(s.board)
@@ -315,7 +304,7 @@ function is_terminal(s::State; mem::CheckersMem = CheckersMem())
     elseif n2 == 0
         return true, 1.0
     else
-        if length(valid_moves(s, true)) == 0
+        if length(valid_moves(s, mem, true)) == 0
             if s.turn == p1turn
                 return true, 0.0
             else
@@ -336,16 +325,24 @@ module Test
 
 using Base.Test
 using Checkers
+using AutoGrowVectors
 
 function test()
     s = State()
-    moves, isjump = Checkers._moves_for_piece(s, Int8(6), Int8(3))
-    @test length(moves) == 2
+    mem = Checkers.CheckersMem()
+    Checkers._moves_for_piece(s, Int8(6), Int8(3), mem)
+    @test length(mem.nonjump_moves) == 2
+    @test length(mem.jump_moves) == 0
 
     s.board[5, 4] = Checkers.black
-    moves, isjump = Checkers._moves_for_piece(s, Int8(6), Int8(3))
-    @test length(moves) == 1
+    reset!(mem.jump_moves)
+    reset!(mem.nonjump_moves)
+    Checkers._moves_for_piece(s, Int8(6), Int8(3), mem)
+    @test length(mem.jump_moves) == 1
+    @test length(mem.nonjump_moves) == 0
 
+    s.board[5, 2] = Checkers.black
+    @test length(Checkers.valid_moves(s, mem)) == 4
 
 end
 
