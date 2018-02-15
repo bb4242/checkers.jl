@@ -34,7 +34,13 @@ function play_game(think_time)
             for i=1:length(moves)
                 println(i, ". ", moves[i])
             end
-                line = parse(Int, readline())
+            line = nothing
+            while line == nothing || line < 1 || line > length(moves)
+                print("Choose move: ")
+                try
+                    line = parse(Int, readline())
+                end
+            end
             selected_move = moves[line]
         end
 
