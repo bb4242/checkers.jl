@@ -124,12 +124,13 @@ end
 
 "All memory used by checkers functions should be contained within this object"
 struct CheckersMem
+    mfp_spmove::SPMove
     mfp_queue::AutoGrowVector{SPMove}
     jump_moves::AutoGrowVector{Move}
     nonjump_moves::AutoGrowVector{Move}
 end
 
-CheckersMem() = CheckersMem(AutoGrowVector{SPMove}(), AutoGrowVector{Move}(), AutoGrowVector{Move}())
+CheckersMem() = CheckersMem(SPMove(), AutoGrowVector{SPMove}(), AutoGrowVector{Move}(), AutoGrowVector{Move}())
 
 
 function apply_move(s::State, m::Move, mem::CheckersMem)
@@ -196,7 +197,7 @@ function _moves_for_piece(s::State, x::Int8, y::Int8, mem::CheckersMem, short_ci
     #queue = Vector{SPMove}([SPMove(x, y, false, _get_move_directions(s, x, y))])   # TODO: replace with AGV
     #available_moves = Vector{Move}()                                                 # TODO: replace with AGV
     found_jump = false   # Whether we've found a jump move anywhere yet
-    spmove = SPMove()
+    spmove = mem.mfp_spmove
 
     while length(queue) > 0
 
