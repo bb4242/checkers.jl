@@ -42,6 +42,11 @@ function State()
     return State(p1turn, 0, board)
 end
 
+function show(io::IO, state::State)
+    state.turn == p1turn ? println("Player 1's turn") : println("Player 2's turn")
+    show(state.board)
+end
+
 function show(io::IO, board::Array{BOARD, 2})
     nx, ny = size(board)
     println()

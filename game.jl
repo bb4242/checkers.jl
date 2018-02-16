@@ -15,9 +15,7 @@ function play_game(think_time)
     println("Computer is ", computer_player)
 
     while !is_terminal(state, mem)[1]
-        println("\nTURN: ", state.turn)
-        println(state)
-        println()
+        println("\n", state)
         moves = valid_moves(state, mem)
         selected_move = nothing
 
@@ -26,7 +24,7 @@ function play_game(think_time)
                 sleep(think_time)
             end
             selected_move, n_nodes, est_minimax = MCTS.get_best_move(wc)
-            println("Computer minimax estimate: ", est_minimax)
+            @printf("Computer minimax estimate: %.3f\n", est_minimax)
             println("Computer nodes: ", n_nodes)
             println("Computer move: ", selected_move)
 
