@@ -8,17 +8,15 @@ using Checkers
 
 function play_game(think_time)
     state = State()
-
+    mem = Checkers.CheckersMem()
     wc = MCTS.start_workers()
 
     computer_player = rand([p1turn, p2turn])
     println("Computer is ", computer_player)
 
-    while !is_terminal(state)[1]
-        println("\nTURN: ", state.turn)
-        println(state)
-        println()
-        moves = valid_moves(state)
+    while !is_terminal(state, mem)[1]
+        println("\n", state)
+        moves = valid_moves(state, mem)
         selected_move = nothing
 
         if state.turn == computer_player
@@ -26,7 +24,7 @@ function play_game(think_time)
                 sleep(think_time)
             end
             selected_move, n_nodes, est_minimax = MCTS.get_best_move(wc)
-            println("Computer minimax estimate: ", est_minimax)
+            @printf("Computer minimax estimate: %.3f\n", est_minimax)
             println("Computer nodes: ", n_nodes)
             println("Computer move: ", selected_move)
 
@@ -34,11 +32,17 @@ function play_game(think_time)
             for i=1:length(moves)
                 println(i, ". ", moves[i])
             end
-                line = parse(Int, readline())
+            line = nothing
+            while line == nothing || line < 1 || line > length(moves)
+                print("Choose move: ")
+                try
+                    line = parse(Int, readline())
+                end
+            end
             selected_move = moves[line]
         end
 
-        state = apply_move(state, selected_move)
+        state = apply_move(state, selected_move, mem)
         MCTS.do_apply_move(wc, selected_move)
 
     end
