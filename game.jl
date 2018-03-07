@@ -46,7 +46,7 @@ function play_game(think_time)
         MCTS.do_apply_move(wc, selected_move)
 
     end
-    println("Game over, winner: ", is_terminal(state))
+    println("Game over, winner: ", is_terminal(state, mem))
     println(state.board)
 end
 
