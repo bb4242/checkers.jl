@@ -337,6 +337,47 @@ s = State(p1turn, 0, 0, 0, b)
 end
 
 
+module NN
+
+using Checkers
+using Knet
+
+function state_to_tensor(s::State)
+    tensor = zeros(Float32, 8, 4, 8)
+
+    # Populate board in the first five layers
+    for i in 1:8, j in 1:8
+        slot = s.board[i, j]
+        if slot == Checkers.xxxxx
+            continue
+        end
+        tensor[i, div(j + 1, 2), Int8(slot) + 1] = 1.0
+    end
+
+    # Populate turn
+    tensor[:, :, 6] =  s.turn == Checkers.p1turn ? 1.0 : 0.0
+
+    # Populate must move slot
+    if s.must_move_x > 0
+        tensor[s.must_move_x, div(s.must_move_y + 1, 2), 7] = 1.0
+    end
+
+    # Populate turns without capture layer
+    tensor[:, :, 8] = s.moves_without_capture / 100
+
+    return tensor
+end
+
+# Segmentation-like model in Knet
+function predict(w, x0)
+    x1 = pool(relu.(conv4(w[1], x0, padding=1) .+ w[2]))
+    x2 = pool(relu.(conv4(w[3], x0, padding=1) .+ w[4]))
+end
+
+
+end
+
+
 end
 
 #Checkers.test_game()
