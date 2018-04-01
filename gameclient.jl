@@ -25,7 +25,6 @@ function do_client(mcts_iterations, game_id, player)
 
     while isopen(sock)
         resp = JSON.parse(readline(sock))
-        println("Received ", resp)
         @assert resp["result"] == "ok"
 
         if haskey(resp, "game_state")
@@ -40,7 +39,6 @@ function do_client(mcts_iterations, game_id, player)
                     est_minimax, node = MCTS.mcts(state, mem, mcts_iterations)
                     move = get(MCTS.best_child(node, 0.0).move)
                     move_arr = [move_arr; [move.sx move.sy]]
-                    println("MOVEARR ", move_arr)
 
                     state = Checkers.apply_move(state, move, mem)
 
@@ -49,7 +47,6 @@ function do_client(mcts_iterations, game_id, player)
                     println("Computer move: ", move)
                 end
                 move_arr = [move_arr; [move.ex move.ey]]
-                println("FINAL MOVEARR ", move_arr)
 
                 # Send move to server
                 cmd = Dict("command" => "move", "game_id" => game_id, "player" => player, "move" => move_arr')
