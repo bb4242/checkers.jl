@@ -15,6 +15,15 @@ end
 # Map from game_id to state data about that game
 games = Dict{Any, ServerGame}()
 
+function state_to_json(s::State)
+    d = Dict(
+        "turn" => convert(Int, s.turn),
+        "moves_without_capture" => s.moves_without_capture,
+        "board" => convert(Array{Int, 2}, s.board)
+    )
+    return JSON.json(d)
+end
+
 function do_server()
     while true
         server = listen(4242)
@@ -51,14 +60,16 @@ function handle_client(sock)
                     else
                         println("Client $sock joining $game_id as $player")
                         game.players[player] = sock
-                        write(sock, """{"result": "ok", "game_state": $(JSON.json(games[game_id].game_state))}\n""")
+                        for pair in game.players
+                            write(pair[2], """{"result": "ok", "game_state": $(state_to_json(games[game_id].game_state))}\n""")
+                        end
                         continue
                     end
                 else
                     newgame = ServerGame(Dict(player => sock), Checkers.State())
                     games[game_id] = newgame
                     println("Creating new game $game_id")
-                    write(sock, """{"result": "ok", "game_state": $(JSON.json(games[game_id].game_state))}\n""")
+                    write(sock, """{"result": "ok"}\n""")
                     continue
                 end
 
@@ -85,14 +96,9 @@ function handle_client(sock)
                         game.game_state = Checkers.apply_move(game.game_state, cm, Checkers.CheckersMem())
                     end
 
-                    # TODO: Make sure game has 2 players
-                    # TODO: Validate it's your turn
-                    # TODO: Apply move
-                    # TODO: Check for game that has ended & remove it from games dict
-
                     for pair in game.players
-                        write(pair[2], """{"result": "ok", "game_state": $(JSON.json(game.game_state))}\n""")
-                        if Checkers.is_terminal(game.game_state, Checkers.CheckersMem())
+                        write(pair[2], """{"result": "ok", "game_state": $(state_to_json(game.game_state))}\n""")
+                        if Checkers.is_terminal(game.game_state, Checkers.CheckersMem())[1]
                             close(pair[2])
                         end
                     end
