@@ -49,7 +49,7 @@ function open_db()
     SQLite.execute!(db, """
 CREATE TABLE IF NOT EXISTS games
  (id INTEGER PRIMARY KEY, player1_id INTEGER, player2_id INTEGER,
- outcome REAL NOT NULL, start_time TEXT NOT NULL);
+ outcome REAL NOT NULL, end_time TEXT NOT NULL);
 """)
     SQLite.execute!(db, """
 CREATE TABLE IF NOT EXISTS positions
@@ -58,19 +58,22 @@ CREATE TABLE IF NOT EXISTS positions
 """)
 
     # Prepare statements
-    insert_stmt = SQLite.Stmt(db, """
+    position_insert_stmt = SQLite.Stmt(db, """
 INSERT INTO positions (game_id, move_number, board_state, mcts_probs)
  VALUES (?, ?, ?, ?)
 """)
+    game_insert_stmt = SQLite.Stmt(db, """
+INSERT INTO games (outcome, end_time) VALUES (?, ?)
+""")
 
-    return db, insert_stmt
+    return db, position_insert_stmt, game_insert_stmt
 end
 
 function insert_position(insert_stmt, game_id, move_number, position)
     board_state = JSON.json(position.board_state)
     mcts_probs = JSON.json([
-        [c.total_visits / node.total_visits for c in node.children],
-        [get(c.move) for c in node.children]
+        position.mcts_probs,
+        position.mcts_moves
     ])
 
     SQLite.bind!(insert_stmt, 1, game_id)
@@ -79,6 +82,18 @@ function insert_position(insert_stmt, game_id, move_number, position)
     SQLite.bind!(insert_stmt, 4, mcts_probs)
 
     SQLite.execute!(insert_stmt)
+end
+
+function insert_game(db, game_stmt, pos_stmt, outcome, positions)
+    SQLite.bind!(game_stmt, 1, outcome)
+    SQLite.bind!(game_stmt, 2, JSON.json(now()))
+    SQLite.execute!(game_stmt)
+    game_id = SQLite.query(db, "SELECT last_insert_rowid()")[1][1]
+
+    for position in enumerate(positions)
+        insert_position(pos_stmt, game_id, position[1], position[2])
+    end
+
 end
 
 function simulate_game(player1, player2)
@@ -98,11 +113,14 @@ function simulate_game(player1, player2)
 
     println("\nGame Over")
     println(s)
-    println(Checkers.is_terminal(s, player.mem))
+    outcome = Checkers.is_terminal(s, player.mem)[2]
+    println("outcome: ", outcome)
 
-    return positions
+    return positions, outcome
 end
 
-#simulate_game(Player(10000), Player(10000))
+positions, outcome = simulate_game(Player(1000), Player(1000))
+db, pi, gi = open_db()
+insert_game(db, gi, pi, outcome, positions)
 
 end
