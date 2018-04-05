@@ -4,10 +4,11 @@ include("mcts.jl")
 
 module GameGenerator
 
-using SQLite
-using JSON
-using MCTS
-using Checkers
+import SQLite
+import MsgPack
+import JSON
+import MCTS
+import Checkers
 
 struct Player
     mem::Checkers.CheckersMem
@@ -22,6 +23,7 @@ struct Position
     board_state::Checkers.State
     mcts_probs::Vector{Float32}
     mcts_moves::Vector{Checkers.Move}
+    mcts_score::Float32
 end
 
 struct Game
@@ -38,7 +40,8 @@ function compute_move(player::Player, state::Checkers.State)
 
     position = Position(deepcopy(state),
                         [c.total_visits / node.total_visits for c in node.children],
-                        [get(c.move) for c in node.children])
+                        [get(c.move) for c in node.children],
+                        est_minimax)
     return move, position
 end
 
@@ -54,13 +57,13 @@ CREATE TABLE IF NOT EXISTS games
     SQLite.execute!(db, """
 CREATE TABLE IF NOT EXISTS positions
  (id INTEGER PRIMARY KEY, game_id INTEGER, move_number INTEGER NOT NULL,
- board_state TEXT NOT NULL, mcts_probs TEXT NOT NULL);
+ board_state BLOB NOT NULL, mcts_probs BLOB NOT NULL, mcts_moves BLOB NOT NULL, mcts_score REAL NOT NULL);
 """)
 
     # Prepare statements
     position_insert_stmt = SQLite.Stmt(db, """
-INSERT INTO positions (game_id, move_number, board_state, mcts_probs)
- VALUES (?, ?, ?, ?)
+INSERT INTO positions (game_id, move_number, board_state, mcts_probs, mcts_moves, mcts_score)
+ VALUES (?, ?, ?, ?, ?, ?)
 """)
     game_insert_stmt = SQLite.Stmt(db, """
 INSERT INTO games (outcome, end_time) VALUES (?, ?)
@@ -69,26 +72,64 @@ INSERT INTO games (outcome, end_time) VALUES (?, ?)
     return db, position_insert_stmt, game_insert_stmt
 end
 
-function insert_position(insert_stmt, game_id, move_number, position)
-    board_state = JSON.json(position.board_state)
-    mcts_probs = JSON.json([
-        position.mcts_probs,
-        position.mcts_moves
-    ])
+#### Serialization routines
 
+function pack_state(s::Checkers.State)
+    board_arr = convert(Vector{Int8}, reshape(s.board, (64,)))
+    arr = [convert(Int8, s.turn), s.moves_without_capture, s.must_move_x, s.must_move_y, board_arr]
+    return MsgPack.pack(arr)
+end
+
+function unpack_state(sb::Vector{UInt8})
+    arr = MsgPack.unpack(sb)
+    return Checkers.State(
+        convert(Checkers.TURN, arr[1]),
+        arr[2],
+        arr[3],
+        arr[4],
+        reshape(convert(Vector{Checkers.BOARD}, arr[5]), (8, 8)))
+end
+
+function pack_moves(moves::Vector{Checkers.Move})
+    return MsgPack.pack([[m.sx, m.sy, m.ex, m.ey] for m in moves])
+end
+
+function unpack_moves(mb::Vector{UInt8})
+    arr = MsgPack.unpack(mb)
+    return [Checkers.Move(m...) for m in arr]
+end
+
+function execute_with_retry!(stmt)
+    while true
+        try
+            SQLite.execute!(stmt)
+            break
+        catch exc
+            if isa(exc, SQLite.SQLiteException) && contains(lowercase(exc.msg), "locked")
+                println("\n\n\n*****************DB LOCKED; retrying..... **********************\n\n\n")
+                sleep(rand())
+            else
+                throw(exc)
+            end
+        end
+    end
+end
+
+function insert_position(insert_stmt, game_id, move_number, position)
     SQLite.bind!(insert_stmt, 1, game_id)
     SQLite.bind!(insert_stmt, 2, move_number)
-    SQLite.bind!(insert_stmt, 3, board_state)
-    SQLite.bind!(insert_stmt, 4, mcts_probs)
-
-    SQLite.execute!(insert_stmt)
+    SQLite.bind!(insert_stmt, 3, pack_state(position.board_state))
+    SQLite.bind!(insert_stmt, 4, MsgPack.pack(position.mcts_probs))
+    SQLite.bind!(insert_stmt, 5, pack_moves(position.mcts_moves))
+    SQLite.bind!(insert_stmt, 6, position.mcts_score)
+    execute_with_retry!(insert_stmt)
 end
 
 function insert_game(db, game_stmt, pos_stmt, outcome, positions)
     SQLite.bind!(game_stmt, 1, outcome)
     SQLite.bind!(game_stmt, 2, JSON.json(now()))
-    SQLite.execute!(game_stmt)
-    game_id = SQLite.query(db, "SELECT last_insert_rowid()")[1][1]
+    execute_with_retry!(game_stmt)
+    game_id = get(SQLite.query(db, "SELECT last_insert_rowid()")[1][1])
 
     for position in enumerate(positions)
         insert_position(pos_stmt, game_id, position[1], position[2])
@@ -119,8 +160,14 @@ function simulate_game(player1, player2)
     return positions, outcome
 end
 
-positions, outcome = simulate_game(Player(1000), Player(1000))
-db, pi, gi = open_db()
-insert_game(db, gi, pi, outcome, positions)
+
+function generation_loop()
+    db, pi, gi = open_db()
+    while true
+        positions, outcome = simulate_game(Player(3000), Player(3000))
+        insert_game(db, gi, pi, outcome, positions)
+    end
+end
+
 
 end
