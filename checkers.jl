@@ -343,7 +343,7 @@ using Checkers
 using Knet
 
 function state_to_tensor(s::State)
-    tensor = zeros(Float32, 8, 4, 8)
+    tensor = zeros(Float64, 8, 4, 8)
 
     # Populate board in the first five layers
     for i in 1:8, j in 1:8
@@ -366,6 +366,27 @@ function state_to_tensor(s::State)
     tensor[:, :, 8] = s.moves_without_capture / 100
 
     return tensor
+end
+
+function state_from_tensor(tensor::Array{Float64, 2})
+
+end
+
+function moves_to_tensor(mcts_probs::Vector{T}, mcts_moves::Vector{Move}) where T <: Real
+    tensor = zeros(Float64, 8, 4, 4)
+    for mi in 1:length(mcts_moves)
+        move = mcts_moves[mi]
+        prob = mcts_probs[mi]
+        delta_x = move.ex - move.sx > 0 ? 1 : 0
+        delta_y = move.ey - move.sy > 0 ? 1 : 0
+        di = 2 * delta_y + delta_x + 1
+        tensor[move.sx, div(move.sy + 1, 2), di] = prob
+    end
+    return tensor
+end
+
+function moves_from_tensor(tensor)
+
 end
 
 # Segmentation-like model in Knet
