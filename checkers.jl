@@ -343,7 +343,7 @@ using Checkers
 using Knet
 
 function state_to_tensor(s::State)
-    tensor = zeros(Float64, 8, 4, 8)
+    tensor = zeros(UInt8, 8, 4, 8)
 
     # Populate board in the first five layers
     for i in 1:8, j in 1:8
@@ -351,19 +351,19 @@ function state_to_tensor(s::State)
         if slot == Checkers.xxxxx
             continue
         end
-        tensor[i, div(j + 1, 2), Int8(slot) + 1] = 1.0
+        tensor[i, div(j + 1, 2), Int8(slot) + 1] = 1
     end
 
     # Populate turn
-    tensor[:, :, 6] =  s.turn == Checkers.p1turn ? 1.0 : 0.0
+    tensor[:, :, 6] =  s.turn == Checkers.p1turn ? 1 : 0
 
     # Populate must move slot
     if s.must_move_x > 0
-        tensor[s.must_move_x, div(s.must_move_y + 1, 2), 7] = 1.0
+        tensor[s.must_move_x, div(s.must_move_y + 1, 2), 7] = 1
     end
 
     # Populate turns without capture layer
-    tensor[:, :, 8] = s.moves_without_capture / 100
+    tensor[:, :, 8] = s.moves_without_capture
 
     return tensor
 end
@@ -373,7 +373,7 @@ function state_from_tensor(tensor::Array{Float64, 2})
 end
 
 function moves_to_tensor(mcts_probs::Vector{T}, mcts_moves::Vector{Move}) where T <: Real
-    tensor = zeros(Float64, 8, 4, 4)
+    tensor = zeros(Float16, 8, 4, 4)
     for mi in 1:length(mcts_moves)
         move = mcts_moves[mi]
         prob = mcts_probs[mi]

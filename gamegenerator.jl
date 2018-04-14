@@ -5,7 +5,7 @@ include("mcts.jl")
 module GameGenerator
 
 import SQLite
-import MsgPack
+import Blosc
 import JSON
 import MCTS
 import Checkers
@@ -57,13 +57,13 @@ CREATE TABLE IF NOT EXISTS games
     SQLite.execute!(db, """
 CREATE TABLE IF NOT EXISTS positions
  (id INTEGER PRIMARY KEY, game_id INTEGER, move_number INTEGER NOT NULL,
- board_state BLOB NOT NULL, mcts_probs BLOB NOT NULL, mcts_moves BLOB NOT NULL, mcts_score REAL NOT NULL);
+ board_state BLOB NOT NULL, mcts_moves BLOB NOT NULL, mcts_score REAL NOT NULL);
 """)
 
     # Prepare statements
     position_insert_stmt = SQLite.Stmt(db, """
-INSERT INTO positions (game_id, move_number, board_state, mcts_probs, mcts_moves, mcts_score)
- VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO positions (game_id, move_number, board_state, mcts_moves, mcts_score)
+ VALUES (?, ?, ?, ?, ?)
 """)
     game_insert_stmt = SQLite.Stmt(db, """
 INSERT INTO games (outcome, end_time) VALUES (?, ?)
@@ -73,31 +73,6 @@ INSERT INTO games (outcome, end_time) VALUES (?, ?)
 end
 
 #### Serialization routines
-
-function pack_state(s::Checkers.State)
-    board_arr = convert(Vector{Int8}, reshape(s.board, (64,)))
-    arr = [convert(Int8, s.turn), s.moves_without_capture, s.must_move_x, s.must_move_y, board_arr]
-    return MsgPack.pack(arr)
-end
-
-function unpack_state(sb::Vector{UInt8})
-    arr = MsgPack.unpack(sb)
-    return Checkers.State(
-        convert(Checkers.TURN, arr[1]),
-        arr[2],
-        arr[3],
-        arr[4],
-        reshape(convert(Vector{Checkers.BOARD}, arr[5]), (8, 8)))
-end
-
-function pack_moves(moves::Vector{Checkers.Move})
-    return MsgPack.pack([[m.sx, m.sy, m.ex, m.ey] for m in moves])
-end
-
-function unpack_moves(mb::Vector{UInt8})
-    arr = MsgPack.unpack(mb)
-    return [Checkers.Move(m...) for m in arr]
-end
 
 function execute_with_retry!(stmt)
     while true
@@ -118,10 +93,11 @@ end
 function insert_position(insert_stmt, game_id, move_number, position)
     SQLite.bind!(insert_stmt, 1, game_id)
     SQLite.bind!(insert_stmt, 2, move_number)
-    SQLite.bind!(insert_stmt, 3, pack_state(position.board_state))
-    SQLite.bind!(insert_stmt, 4, MsgPack.pack(position.mcts_probs))
-    SQLite.bind!(insert_stmt, 5, pack_moves(position.mcts_moves))
-    SQLite.bind!(insert_stmt, 6, position.mcts_score)
+    SQLite.bind!(insert_stmt, 3,
+                 Blosc.compress(Checkers.NN.state_to_tensor(position.board_state), level=9))
+    SQLite.bind!(insert_stmt, 4,
+                 Blosc.compress(Checkers.NN.moves_to_tensor(position.mcts_probs, position.mcts_moves), level=9))
+    SQLite.bind!(insert_stmt, 5, position.mcts_score)
     execute_with_retry!(insert_stmt)
 end
 
