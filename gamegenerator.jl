@@ -6,6 +6,7 @@ module GameGenerator
 
 import SQLite
 import Blosc
+import MsgPack
 import JSON
 import MCTS
 import Checkers
@@ -72,7 +73,7 @@ INSERT INTO games (outcome, end_time) VALUES (?, ?)
     return db, position_insert_stmt, game_insert_stmt
 end
 
-#### Serialization routines
+dbpack(array) = Blosc.compress(MsgPack.pack(array[:]), level=9)
 
 function execute_with_retry!(stmt)
     while true
@@ -93,10 +94,8 @@ end
 function insert_position(insert_stmt, game_id, move_number, position)
     SQLite.bind!(insert_stmt, 1, game_id)
     SQLite.bind!(insert_stmt, 2, move_number)
-    SQLite.bind!(insert_stmt, 3,
-                 Blosc.compress(Checkers.NN.state_to_tensor(position.board_state), level=9))
-    SQLite.bind!(insert_stmt, 4,
-                 Blosc.compress(Checkers.NN.moves_to_tensor(position.mcts_probs, position.mcts_moves), level=9))
+    SQLite.bind!(insert_stmt, 3, dbpack(Checkers.NN.state_to_tensor(position.board_state)))
+    SQLite.bind!(insert_stmt, 4, dbpack(Checkers.NN.moves_to_tensor(position.mcts_probs, position.mcts_moves)))
     SQLite.bind!(insert_stmt, 5, position.mcts_score)
     execute_with_retry!(insert_stmt)
 end
@@ -105,7 +104,7 @@ function insert_game(db, game_stmt, pos_stmt, outcome, positions)
     SQLite.bind!(game_stmt, 1, outcome)
     SQLite.bind!(game_stmt, 2, JSON.json(now()))
     execute_with_retry!(game_stmt)
-    game_id = get(SQLite.query(db, "SELECT last_insert_rowid()")[1][1])
+    game_id = SQLite.query(db, "SELECT last_insert_rowid()")[1][1]
 
     for position in enumerate(positions)
         insert_position(pos_stmt, game_id, position[1], position[2])

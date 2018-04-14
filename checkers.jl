@@ -373,7 +373,7 @@ function state_from_tensor(tensor::Array{Float64, 2})
 end
 
 function moves_to_tensor(mcts_probs::Vector{T}, mcts_moves::Vector{Move}) where T <: Real
-    tensor = zeros(Float16, 8, 4, 4)
+    tensor = zeros(Float32, 8, 4, 4)
     for mi in 1:length(mcts_moves)
         move = mcts_moves[mi]
         prob = mcts_probs[mi]
