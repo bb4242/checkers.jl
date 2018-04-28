@@ -6,10 +6,11 @@ using Checkers
 
 mutable struct MoveData
     move::Move
-    n_tries::Int
+    tried::Bool
+    nn_weight::Float
 end
 
-MoveData(move::Move) = MoveData(move, 0)
+MoveData(move::Move) = MoveData(move, false)
 
 mutable struct Node
     board_state::State
@@ -18,20 +19,26 @@ mutable struct Node
     move::Nullable{Move}     # The move used to arrive at this state
     depth::Int
 
-    total_reward::Float64
+    total_reward::Float
     total_visits::Int
+
+    nn_outcome::Float
 
     children::Vector{Node}
     available_moves::Vector{MoveData}
 end
 
-function Node(node::Node, move::Move, mem)
+function Node(node::Node, move::Move, mem, nn_model)
     new_state = apply_move(node.board_state, move, mem)
+    # TODO: Evaluate new_state with NN, populate MoveData.nn_weight
     new_available_moves = [deepcopy(MoveData(m)) for m in valid_moves(new_state, mem)]
+
+    # TODO: Populate Node.nn_outcome
     return Node(new_state, node, move, node.depth+1, 0.0, 0, Vector{Node}(), new_available_moves)
 end
 
-Node(state::State, mem) = Node(state, nothing, nothing, 0, 0.0, 0, Vector{Node}(),
+# TODO: NN evaluate state, populate MoveData.nn_weight and Node.nn_outcome
+Node(state::State, mem, nn_model) = Node(state, nothing, nothing, 0, 0.0, 0, Vector{Node}(),
                                [deepcopy(MoveData(m)) for m in valid_moves(state, mem)])
 
 function tree_policy(node::Node, mem)
@@ -47,9 +54,9 @@ end
 
 function expand(node::Node, mem)
     # Select a move we haven't tried before
-    untried = [m for m in node.available_moves if m.n_tries == 0]
+    untried = [m for m in node.available_moves if !m.tried]
     selected = rand(untried)
-    selected.n_tries += 1
+    selected.tried = true
 
     # Make this move and add a node child node to n
     new_node = Node(node, selected.move, mem)
@@ -107,6 +114,15 @@ function single_mcts_pass(node::Node, mem)
     reward = default_policy(working_node.board_state, mem)
     backup_negamax(working_node, reward)
 end
+
+function single_mcts_pass(node::Node, mem, nn_model)
+    working_node = tree_policy(node, mem)
+    term, outcome = is_terminal(working_node.board_state, mem)
+    reward = term ? outcome : working_node.nn_outcome
+    backup_negamax(working_node, reward)
+end
+
+
 
 function mcts(state::State, mem, n_iterations::Int = 1)
     node = Node(state, mem)
