@@ -340,7 +340,9 @@ end
 module NN
 
 using Checkers
-using Knet
+
+import PyCall
+@PyCall.pyimport keras.models as models
 
 function state_to_tensor(s::State)
     tensor = zeros(UInt8, 8, 4, 8)
@@ -368,8 +370,12 @@ function state_to_tensor(s::State)
     return tensor
 end
 
-function state_from_tensor(tensor::Array{Float64, 2})
 
+function _get_move_indices(move)
+    delta_x = move.ex - move.sx > 0 ? 1 : 0
+    delta_y = move.ey - move.sy > 0 ? 1 : 0
+    di = 2 * delta_y + delta_x + 1
+    return (move.sx, div(move.sy + 1, 2), di)
 end
 
 function moves_to_tensor(mcts_probs::Vector{T}, mcts_moves::Vector{Move}) where T <: Real
@@ -377,27 +383,33 @@ function moves_to_tensor(mcts_probs::Vector{T}, mcts_moves::Vector{Move}) where 
     for mi in 1:length(mcts_moves)
         move = mcts_moves[mi]
         prob = mcts_probs[mi]
-        delta_x = move.ex - move.sx > 0 ? 1 : 0
-        delta_y = move.ey - move.sy > 0 ? 1 : 0
-        di = 2 * delta_y + delta_x + 1
-        tensor[move.sx, div(move.sy + 1, 2), di] = prob
+        tensor[_get_move_indices(move)...] = prob
     end
     return tensor
 end
 
-function moves_from_tensor(tensor)
+extract_move_prob(move_probs, move::Move) = move_probs[_get_move_indices(move)...]
 
+
+abstract type NNModel end
+
+mutable struct KerasModel <: NNModel
+    model::PyCall.PyObject
+    input_shape::Tuple
 end
 
-# Segmentation-like model in Knet
-function predict(w, x0)
-    x1 = pool(relu.(conv4(w[1], x0, padding=1) .+ w[2]))
-    x2 = pool(relu.(conv4(w[3], x0, padding=1) .+ w[4]))
+function KerasModel(save_path::String)
+    model = models.load_model(save_path)
+    return KerasModel(model, model[:input_shape][2:end])
 end
 
-
+function (model::KerasModel)(s::State)
+    batch = reshape(state_to_tensor(s), :, 8, 4, 8)
+    move_probs, outcome = model.model[:predict_on_batch](batch)
+    return permutedims(reshape(move_probs, (4, 4, 8)), (3, 2, 1)), outcome[1]
 end
 
+end
 
 end
 

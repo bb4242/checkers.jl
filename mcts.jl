@@ -4,13 +4,14 @@ module MCTS
 
 using Checkers
 
+# TODO: Collapse this stuff into Node and eliminate this struct
 mutable struct MoveData
     move::Move
     tried::Bool
-    nn_weight::Float
+    model_weight::Float32
 end
 
-MoveData(move::Move) = MoveData(move, false)
+MoveData(move::Move) = MoveData(move, false, 1.0)
 
 mutable struct Node
     board_state::State
@@ -19,32 +20,40 @@ mutable struct Node
     move::Nullable{Move}     # The move used to arrive at this state
     depth::Int
 
-    total_reward::Float
+    total_reward::Float32
     total_visits::Int
 
-    nn_outcome::Float
+    model_weight::Float32
+    model_outcome::Float32
 
     children::Vector{Node}
     available_moves::Vector{MoveData}
 end
 
-function Node(node::Node, move::Move, mem, nn_model)
-    new_state = apply_move(node.board_state, move, mem)
-    # TODO: Evaluate new_state with NN, populate MoveData.nn_weight
-    new_available_moves = [deepcopy(MoveData(m)) for m in valid_moves(new_state, mem)]
-
-    # TODO: Populate Node.nn_outcome
-    return Node(new_state, node, move, node.depth+1, 0.0, 0, Vector{Node}(), new_available_moves)
+function _get_moves_and_outcome(state, mem, model)
+    move_probs, outcome = model(state)
+    available_moves = [deepcopy(MoveData(m)) for m in valid_moves(state, mem)]
+    for md in available_moves
+        md.model_weight = Checkers.NN.extract_move_prob(move_probs, md.move)
+    end
+    return available_moves, outcome
 end
 
-# TODO: NN evaluate state, populate MoveData.nn_weight and Node.nn_outcome
-Node(state::State, mem, nn_model) = Node(state, nothing, nothing, 0, 0.0, 0, Vector{Node}(),
-                               [deepcopy(MoveData(m)) for m in valid_moves(state, mem)])
+function Node(node::Node, move::Move, model_weight::Float32, mem, model)
+    new_state = apply_move(node.board_state, move, mem)
+    available_moves, outcome = _get_moves_and_outcome(new_state, mem, model)
+    return Node(new_state, node, move, node.depth+1, 0.0, 0, model_weight, outcome, Vector{Node}(), available_moves)
+end
 
-function tree_policy(node::Node, mem)
+function Node(state::State, mem, model)
+    available_moves, outcome = _get_moves_and_outcome(state, mem, model)
+    Node(state, nothing, nothing, 0, 0.0, 0, 0.0, outcome, Vector{Node}(), available_moves)
+end
+
+function tree_policy(node::Node, mem, model)
     while !is_terminal(node.board_state, mem)[1]
         if length(node.children) < length(node.available_moves)
-            return expand(node, mem)
+            return expand(node, mem, model)
         else
             node = best_child(node)
         end
@@ -52,14 +61,14 @@ function tree_policy(node::Node, mem)
     return node
 end
 
-function expand(node::Node, mem)
+function expand(node::Node, mem, model)
     # Select a move we haven't tried before
     untried = [m for m in node.available_moves if !m.tried]
     selected = rand(untried)
     selected.tried = true
 
     # Make this move and add a node child node to n
-    new_node = Node(node, selected.move, mem)
+    new_node = Node(node, selected.move, selected.model_weight, mem, model)
     push!(node.children, new_node)
 
     return new_node
@@ -70,7 +79,9 @@ function best_child(node::Node, c::Float64 = 1.0)
     max_val = -Inf * mult
     max_child = node.children[1]
     for child in node.children
-        val = child.total_reward / child.total_visits + mult * c * sqrt(2 * log(node.total_visits) / child.total_visits)
+        reward = child.total_reward / child.total_visits
+        exploration = mult * c * child.model_weight * sqrt(2 * log(node.total_visits) / child.total_visits)
+        val = reward + exploration
         if val*mult > max_val*mult
             max_val = val
             max_child = child
@@ -79,7 +90,17 @@ function best_child(node::Node, c::Float64 = 1.0)
     return max_child
 end
 
-function default_policy(state::State, mem)
+struct RandomPlayoutModel{T}
+    mem::T
+    weights::Array{Float32, 3}
+end
+
+RandomPlayoutModel(mem::T) where T = RandomPlayoutModel{T}(mem, ones(Float32, 8, 4, 4))
+
+function (model::RandomPlayoutModel)(state::State)
+    mem = model.mem
+    n_moves = length(valid_moves(state, mem))
+
     cur = deepcopy(state)
     nxt = State()
     tmp = State()
@@ -95,10 +116,10 @@ function default_policy(state::State, mem)
         cur = nxt
         nxt = tmp
     end
-    return is_terminal(cur, mem)[2]
+    return model.weights, is_terminal(cur, mem)[2]
 end
 
-function backup_negamax(node::Node, reward::Float64)
+function backup_negamax(node::Node, reward::Real)
     nnode = Nullable(node)
     while !isnull(nnode)
         n = get(nnode)
@@ -109,32 +130,26 @@ function backup_negamax(node::Node, reward::Float64)
 end
 
 "Update node by running a single MCTS pass"
-function single_mcts_pass(node::Node, mem)
-    working_node = tree_policy(node, mem)
-    reward = default_policy(working_node.board_state, mem)
-    backup_negamax(working_node, reward)
-end
-
-function single_mcts_pass(node::Node, mem, nn_model)
-    working_node = tree_policy(node, mem)
+function single_mcts_pass(node::Node, mem, model)
+    working_node = tree_policy(node, mem, model)
     term, outcome = is_terminal(working_node.board_state, mem)
-    reward = term ? outcome : working_node.nn_outcome
+    reward = term ? outcome : working_node.model_outcome
     backup_negamax(working_node, reward)
 end
 
 
 
-function mcts(state::State, mem, n_iterations::Int = 1)
-    node = Node(state, mem)
+function mcts(state::State, mem, model, n_iterations::Int = 1)
+    node = Node(state, mem, model)
     for i=1:n_iterations
-        single_mcts_pass(node, mem)
+        single_mcts_pass(node, mem, model)
     end
     return node.total_reward / node.total_visits, node
 end
 
 function mcts(state::State, command_channel::RemoteChannel, response_channel::RemoteChannel)
     mem = Checkers.CheckersMem()
-    node = Node(state, mem)
+    node = Node(state, mem, model)
     paused = false
     check_time = time()
 
@@ -150,7 +165,7 @@ function mcts(state::State, command_channel::RemoteChannel, response_channel::Re
             check_time = time()
 
             if cmd[1] == :start_thinking
-                node = Node(cmd[2])
+                node = Node(cmd[2], mem, model)
 
             elseif cmd[1] == :apply_move
                 response = (false, :notfound)
