@@ -14,11 +14,11 @@ import Checkers
 struct Player
     mem::Checkers.CheckersMem
     mcts_iterations::Int
+    model
     # TODO: Add exploration temperature
-    # TODO: Add neural network weights here
 end
 
-Player(mcts_iterations) = Player(Checkers.CheckersMem(), mcts_iterations)
+Player(mcts_iterations, model) = Player(Checkers.CheckersMem(), mcts_iterations, model)
 
 struct Position
     board_state::Checkers.State
@@ -35,7 +35,7 @@ end
 
 
 function compute_move(player::Player, state::Checkers.State)
-    est_minimax, node = MCTS.mcts(state, player.mem, player.mcts_iterations)
+    est_minimax, node = MCTS.mcts(state, player.mem, player.model, player.mcts_iterations)
     # TODO: Choose move according to probability dist and exploration temperature
     move = get(MCTS.best_child(node, 0.0).move)
 
